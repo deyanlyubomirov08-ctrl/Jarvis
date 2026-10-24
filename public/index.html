@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="bg">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Таверната — онлайн D&amp;D</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎲</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Lobby -->
+  <section id="lobby" class="screen">
+    <div class="lobby-card">
+      <h1>🎲 Таверната</h1>
+      <p class="tagline">Онлайн маса за Dungeons &amp; Dragons — карта, зарове, герои и инициатива в реално време.</p>
+
+      <div class="lobby-grid">
+        <form id="create-form" class="panel">
+          <h2>Нова кампания</h2>
+          <label>Име на кампанията
+            <input name="roomName" maxlength="80" placeholder="Мините на Фанделвър" required>
+          </label>
+          <label>Твоето име (водещ / DM)
+            <input name="name" maxlength="40" placeholder="Майстора" required>
+          </label>
+          <button type="submit" class="primary">Създай стая</button>
+        </form>
+
+        <form id="join-form" class="panel">
+          <h2>Влез в игра</h2>
+          <label>Код на стаята
+            <input name="code" maxlength="6" placeholder="ABC123" autocomplete="off" required class="code-input">
+          </label>
+          <label>Твоето име
+            <input name="name" maxlength="40" placeholder="Арагорн" required>
+          </label>
+          <button type="submit" class="primary">Влез</button>
+        </form>
+      </div>
+
+      <div id="recent" class="recent hidden">
+        <h3>Последни игри</h3>
+        <ul id="recent-list"></ul>
+      </div>
+      <p id="lobby-error" class="error" role="alert"></p>
+    </div>
+  </section>
+
+  <!-- Game -->
+  <section id="game" class="screen hidden">
+    <header class="topbar">
+      <div class="room-info">
+        <strong id="room-name"></strong>
+        <button id="copy-code" class="chip" title="Копирай линк за покана">Код: <span id="room-code"></span> 📋</button>
+        <span id="conn-status" class="status"></span>
+      </div>
+      <div id="player-list" class="player-list"></div>
+      <button id="leave" class="ghost">Изход</button>
+    </header>
+
+    <main class="layout">
+      <section class="map-area">
+        <div class="map-toolbar">
+          <button data-zoom="-1" title="Отдалечи">−</button>
+          <span id="zoom-label">100%</span>
+          <button data-zoom="1" title="Приближи">+</button>
+          <span class="hint">Влачи своя токен, за да го преместиш.</span>
+        </div>
+        <div id="map-viewport" class="map-viewport">
+          <div id="map-board" class="map-board"></div>
+        </div>
+      </section>
+
+      <aside class="sidebar">
+        <nav class="tabs" role="tablist">
+          <button data-tab="chat" class="active">Чат</button>
+          <button data-tab="chars">Герои</button>
+          <button data-tab="init">Инициатива</button>
+          <button data-tab="dm" class="dm-only">DM</button>
+        </nav>
+
+        <div id="tab-chat" class="tab active">
+          <div id="log" class="log" aria-live="polite"></div>
+          <div class="dice-bar">
+            <div class="dice-buttons" id="dice-buttons"></div>
+            <div class="dice-options">
+              <label><input type="checkbox" id="roll-private"> Таен (само за DM)</label>
+              <span class="hint">/r 2d6+3 · /gr 1d20 · 4d6dl1</span>
+            </div>
+          </div>
+          <form id="chat-form" class="chat-form">
+            <input id="chat-input" maxlength="1000" placeholder="Съобщение или /r 1d20+5" autocomplete="off">
+            <button type="submit" class="primary">➤</button>
+          </form>
+        </div>
+
+        <div id="tab-chars" class="tab">
+          <form id="new-char-form" class="row">
+            <input name="name" maxlength="60" placeholder="Име на нов герой" required>
+            <button class="primary">+ Герой</button>
+          </form>
+          <div id="char-list" class="char-list"></div>
+          <div id="char-sheet" class="char-sheet hidden"></div>
+        </div>
+
+        <div id="tab-init" class="tab">
+          <div class="init-head">
+            <strong>Рунд <span id="init-round">1</span></strong>
+            <div class="dm-only">
+              <button id="init-prev" title="Предишен ход">◀</button>
+              <button id="init-next" class="primary">Следващ ход ▶</button>
+            </div>
+          </div>
+          <ol id="init-list" class="init-list"></ol>
+          <div id="init-my-chars" class="init-my"></div>
+          <form id="init-add-form" class="row dm-only">
+            <input name="name" maxlength="40" placeholder="Противник" required>
+            <input name="value" type="number" placeholder="Иниц." class="num" required>
+            <button>Добави</button>
+          </form>
+          <button id="init-clear" class="danger dm-only">Изчисти битката</button>
+        </div>
+
+        <div id="tab-dm" class="tab dm-only">
+          <h3>Карта</h3>
+          <form id="map-form" class="stack">
+            <label>Фон (URL на изображение)
+              <input name="background" type="url" placeholder="https://…/map.jpg">
+            </label>
+            <div class="row">
+              <label>Колони <input name="cols" type="number" min="5" max="100" class="num"></label>
+              <label>Редове <input name="rows" type="number" min="5" max="100" class="num"></label>
+              <label>Клетка px <input name="gridSize" type="number" min="20" max="200" class="num"></label>
+            </div>
+            <button class="primary">Запази картата</button>
+          </form>
+
+          <h3>Добави чудовище / NPC</h3>
+          <form id="monster-form" class="stack">
+            <div class="row">
+              <input name="label" maxlength="40" placeholder="Гоблин" required>
+              <input name="hp" type="number" min="0" placeholder="HP" class="num">
+              <input name="color" type="color" value="#c0392b">
+            </div>
+            <div class="row">
+              <label>Размер
+                <select name="size">
+                  <option value="1">Малък/Среден (1×1)</option>
+                  <option value="2">Голям (2×2)</option>
+                  <option value="3">Огромен (3×3)</option>
+                  <option value="4">Гигантски (4×4)</option>
+                </select>
+              </label>
+              <label><input type="checkbox" name="hidden"> Скрит</label>
+            </div>
+            <label>Брой <input name="count" type="number" min="1" max="20" value="1" class="num"></label>
+            <button class="primary">Постави на картата</button>
+          </form>
+        </div>
+
+        <div id="token-panel" class="token-panel hidden"></div>
+      </aside>
+    </main>
+  </section>
+
+  <div id="toast" class="toast" role="status"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
