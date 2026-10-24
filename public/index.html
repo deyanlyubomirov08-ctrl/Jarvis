@@ -12,15 +12,26 @@
   <section id="lobby" class="screen">
     <div class="lobby-card">
       <h1>🎲 Таверната</h1>
-      <p class="tagline">Онлайн маса за Dungeons &amp; Dragons — карта, зарове, герои и инициатива в реално време.</p>
+      <p class="tagline">Онлайн маса за Dungeons &amp; Dragons — карта, зарове, герои, чудовища и водещ човек или компютър.</p>
 
       <div class="lobby-grid">
         <form id="create-form" class="panel">
-          <h2>Нова кампания</h2>
+          <h2>Нова игра</h2>
           <label>Име на кампанията
-            <input name="roomName" maxlength="80" placeholder="Мините на Фанделвър" required>
+            <input name="roomName" maxlength="80" placeholder="Мините на Сребърния връх" required>
           </label>
-          <label>Твоето име (водещ / DM)
+          <fieldset class="mode-pick">
+            <legend>Кой води играта?</legend>
+            <label class="mode-option">
+              <input type="radio" name="mode" value="human" checked>
+              <span><strong>👑 Човек</strong><small>Аз съм Dungeon Master и управлявам света.</small></span>
+            </label>
+            <label class="mode-option">
+              <input type="radio" name="mode" value="ai">
+              <span><strong>🤖 Компютър</strong><small>Играем заедно срещу предизвикателства на компютъра.</small></span>
+            </label>
+          </fieldset>
+          <label><span id="create-name-label">Твоето име (водещ / DM)</span>
             <input name="name" maxlength="40" placeholder="Майстора" required>
           </label>
           <button type="submit" class="primary">Създай стая</button>
@@ -43,6 +54,7 @@
         <ul id="recent-list"></ul>
       </div>
       <p id="lobby-error" class="error" role="alert"></p>
+      <p class="legal">Съдържание от D&amp;D 5e SRD (OGL 1.0a / CC-BY-4.0) чрез 5e-bits; изображения от dnd5eapi.co; икони от game-icons.net (CC BY 3.0).</p>
     </div>
   </section>
 
@@ -51,6 +63,7 @@
     <header class="topbar">
       <div class="room-info">
         <strong id="room-name"></strong>
+        <span id="mode-badge" class="chip"></span>
         <button id="copy-code" class="chip" title="Копирай линк за покана">Код: <span id="room-code"></span> 📋</button>
         <span id="conn-status" class="status"></span>
       </div>
@@ -64,7 +77,8 @@
           <button data-zoom="-1" title="Отдалечи">−</button>
           <span id="zoom-label">100%</span>
           <button data-zoom="1" title="Приближи">+</button>
-          <span class="hint">Влачи своя токен, за да го преместиш.</span>
+          <span id="turn-banner" class="turn-banner"></span>
+          <span id="target-hint" class="target-hint hidden"></span>
         </div>
         <div id="map-viewport" class="map-viewport">
           <div id="map-board" class="map-board"></div>
@@ -75,7 +89,9 @@
         <nav class="tabs" role="tablist">
           <button data-tab="chat" class="active">Чат</button>
           <button data-tab="chars">Герои</button>
-          <button data-tab="init">Инициатива</button>
+          <button data-tab="init">Битка</button>
+          <button data-tab="session">Сесия</button>
+          <button data-tab="library">Библиотека</button>
           <button data-tab="dm" class="dm-only">DM</button>
         </nav>
 
@@ -85,7 +101,7 @@
             <div class="dice-buttons" id="dice-buttons"></div>
             <div class="dice-options">
               <label><input type="checkbox" id="roll-private"> Таен (само за DM)</label>
-              <span class="hint">/r 2d6+3 · /gr 1d20 · 4d6dl1</span>
+              <span class="hint" id="chat-hint">/r 2d6+3 · /gr 1d20 · 4d6dl1</span>
             </div>
           </div>
           <form id="chat-form" class="chat-form">
@@ -95,10 +111,11 @@
         </div>
 
         <div id="tab-chars" class="tab">
-          <form id="new-char-form" class="row">
-            <input name="name" maxlength="60" placeholder="Име на нов герой" required>
-            <button class="primary">+ Герой</button>
-          </form>
+          <div class="row">
+            <button id="open-wizard" class="primary">+ Създай герой</button>
+            <button id="random-hero">🎲 Случаен герой</button>
+            <button id="random-party">🎲 Случаен отряд (4)</button>
+          </div>
           <div id="char-list" class="char-list"></div>
           <div id="char-sheet" class="char-sheet hidden"></div>
         </div>
@@ -106,11 +123,12 @@
         <div id="tab-init" class="tab">
           <div class="init-head">
             <strong>Рунд <span id="init-round">1</span></strong>
-            <div class="dm-only">
+            <div class="controller-only">
               <button id="init-prev" title="Предишен ход">◀</button>
               <button id="init-next" class="primary">Следващ ход ▶</button>
             </div>
           </div>
+          <div id="action-panel" class="action-panel"></div>
           <ol id="init-list" class="init-list"></ol>
           <div id="init-my-chars" class="init-my"></div>
           <form id="init-add-form" class="row dm-only">
@@ -121,7 +139,61 @@
           <button id="init-clear" class="danger dm-only">Изчисти битката</button>
         </div>
 
+        <div id="tab-session" class="tab">
+          <div id="adventure-status"></div>
+          <div id="session-controls" class="controller-only stack"></div>
+          <div class="controller-only">
+            <h3>🎲 Напълно случайна сесия</h3>
+            <form id="random-form" class="stack">
+              <div class="row">
+                <label>Ниво <input name="level" type="number" min="1" max="20" class="num" placeholder="авто"></label>
+                <label>Срещи <input name="encounters" type="number" min="1" max="5" value="3" class="num"></label>
+                <label>Терен
+                  <select name="theme">
+                    <option value="">Случаен</option>
+                    <option value="dungeon">Подземие</option>
+                    <option value="crypt">Крипта</option>
+                    <option value="cave">Пещера</option>
+                    <option value="forest">Гора</option>
+                    <option value="swamp">Блато</option>
+                  </select>
+                </label>
+              </div>
+              <button class="primary">Създай случайно приключение</button>
+            </form>
+            <h3>📚 Готови приключения</h3>
+            <div id="adventure-list" class="adventure-list"></div>
+            <h3>🗺️ Само нова карта</h3>
+            <div class="row">
+              <select id="map-theme">
+                <option value="dungeon">Подземие</option>
+                <option value="crypt">Крипта</option>
+                <option value="cave">Пещера</option>
+                <option value="forest">Гора</option>
+                <option value="swamp">Блато</option>
+              </select>
+              <button id="gen-map">Генерирай карта</button>
+            </div>
+          </div>
+          <p class="hint not-controller">Приключението се избира от <span id="controller-name">водещия</span>.</p>
+        </div>
+
+        <div id="tab-library" class="tab">
+          <div class="lib-filters">
+            <input id="lib-search" placeholder="Търси: goblin, dragon, sword, potion…" autocomplete="off">
+            <div class="chips" id="lib-kinds">
+              <button data-kind="monsters" class="active">Чудовища</button>
+              <button data-kind="items">Предмети</button>
+              <button data-kind="spells">Заклинания</button>
+              <button data-kind="rules">Раси и класове</button>
+            </div>
+          </div>
+          <div id="lib-detail" class="lib-detail hidden"></div>
+          <div id="lib-results" class="lib-results"></div>
+        </div>
+
         <div id="tab-dm" class="tab dm-only">
+          <label class="toggle"><input type="checkbox" id="auto-monsters"> 🤖 Компютърът играе чудовищата на техния ход</label>
           <h3>Карта</h3>
           <form id="map-form" class="stack">
             <label>Фон (URL на изображение)
@@ -135,7 +207,8 @@
             <button class="primary">Запази картата</button>
           </form>
 
-          <h3>Добави чудовище / NPC</h3>
+          <h3>Собствено чудовище / NPC</h3>
+          <p class="hint">Чудовища от наръчника се добавят от „Библиотека“.</p>
           <form id="monster-form" class="stack">
             <div class="row">
               <input name="label" maxlength="40" placeholder="Гоблин" required>
@@ -162,6 +235,32 @@
       </aside>
     </main>
   </section>
+
+  <!-- Character creation wizard -->
+  <dialog id="wizard" class="wizard">
+    <form id="wizard-form" method="dialog" class="stack">
+      <h2>Създаване на герой</h2>
+      <label>Име <input name="name" maxlength="60" placeholder="Остави празно за случайно име"></label>
+      <div class="row">
+        <label class="grow">Раса <select name="race" id="wiz-race"></select></label>
+        <label class="grow">Клас <select name="cls" id="wiz-cls"></select></label>
+        <label>Ниво <input name="level" type="number" min="1" max="20" value="1" class="num"></label>
+      </div>
+      <div id="wiz-info" class="wiz-info"></div>
+      <fieldset class="stack">
+        <legend>Характеристики</legend>
+        <label><input type="radio" name="method" value="standard" checked> Стандартен набор (15, 14, 13, 12, 10, 8) — подредени според класа</label>
+        <label><input type="radio" name="method" value="roll"> Хвърли 4d6 (махни най-ниския) за всяка</label>
+        <label><input type="radio" name="method" value="manual"> Въведи ръчно</label>
+        <div id="wiz-manual" class="abilities-input hidden"></div>
+      </fieldset>
+      <div class="row wizard-actions">
+        <button value="cancel" formnovalidate class="ghost">Отказ</button>
+        <button id="wizard-blank" type="button">Празен лист</button>
+        <button id="wizard-submit" type="button" class="primary">Създай героя</button>
+      </div>
+    </form>
+  </dialog>
 
   <div id="toast" class="toast" role="status"></div>
 

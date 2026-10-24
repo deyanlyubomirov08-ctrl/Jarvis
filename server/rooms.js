@@ -1,6 +1,9 @@
 'use strict';
 
 const crypto = require('crypto');
+const lib = require('./library');
+const chargen = require('./chargen');
+const mapgen = require('./mapgen');
 
 // Room (campaign) state and all game-rule mutations. Kept free of networking
 // so it can be unit-tested and persisted as plain JSON.
@@ -9,6 +12,9 @@ const ABILITIES = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
 const TOKEN_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#ecf0f1'];
 const MAX_LOG = 300;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+// Player id used as DM when the computer runs the game.
+const AI_ID = 'ai-dm';
+const SIZE_SQUARES = { Tiny: 1, Small: 1, Medium: 1, Large: 2, Huge: 3, Gargantuan: 4 };
 
 class GameError extends Error {}
 
@@ -46,8 +52,8 @@ function abilityMod(score) {
   return Math.floor((score - 10) / 2);
 }
 
-function newCharacter(ownerId, name, colorIdx) {
-  return {
+function newCharacter(ownerId, name, colorIdx, build = null) {
+  const base = {
     id: id(),
     ownerId,
     name: str(name, 60, 'Нов герой') || 'Нов герой',
@@ -66,7 +72,14 @@ function newCharacter(ownerId, name, colorIdx) {
     inventory: '',
     notes: '',
     color: TOKEN_COLORS[colorIdx % TOKEN_COLORS.length],
+    weapons: [],
+    items: [],
+    xp: 0,
+    gold: 0,
+    icon: null,
   };
+  if (!build) return base;
+  return { ...base, ...build, id: base.id, ownerId, color: build.color || base.color };
 }
 
 function sanitizeCharacterPatch(patch, current) {
@@ -121,15 +134,20 @@ class RoomStore {
     return room;
   }
 
-  createRoom(roomName, dmName) {
+  createRoom(roomName, dmName, mode = 'human') {
     const code = this.newCode();
-    const dm = { id: id(), secret: id(), name: str(dmName, 40).trim() || 'Водещ', isDM: true };
+    const ai = mode === 'ai';
+    const dm = { id: id(), secret: id(), name: str(dmName, 40).trim() || (ai ? 'Домакин' : 'Водещ'), isDM: !ai };
     const room = {
       code,
       name: str(roomName, 80).trim() || 'Нова кампания',
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      dmId: dm.id,
+      mode: ai ? 'ai' : 'human',
+      dmId: ai ? AI_ID : dm.id,
+      hostId: dm.id,
+      autoMonsters: ai,
+      adventure: null,
       players: { [dm.id]: dm },
       characters: {},
       tokens: {},
@@ -171,6 +189,17 @@ class RoomStore {
     if (room.dmId !== playerId) throw new GameError('Само водещият (DM) може да направи това');
   }
 
+  // The human DM, or the host when the computer is the DM.
+  isController(room, playerId) {
+    return room.dmId === playerId || (room.mode === 'ai' && room.hostId === playerId);
+  }
+
+  requireController(room, playerId) {
+    if (!this.isController(room, playerId)) {
+      throw new GameError(room.mode === 'ai' ? 'Само домакинът на играта може да направи това' : 'Само водещият (DM) може да направи това');
+    }
+  }
+
   canEditCharacter(room, playerId, character) {
     return room.dmId === playerId || character.ownerId === playerId;
   }
@@ -187,11 +216,24 @@ class RoomStore {
 
   // ---- Characters ----
 
-  createCharacter(room, playerId, name) {
+  // build: null for a blank sheet, or options for chargen.build()
+  // ({ race, cls, level, method, abilities }); `random: true` randomises all.
+  createCharacter(room, playerId, name, build = null) {
     this.requirePlayer(room, playerId);
     const owned = Object.values(room.characters).filter((c) => c.ownerId === playerId);
     if (owned.length >= 10) throw new GameError('Твърде много герои');
-    const c = newCharacter(playerId, name, Object.keys(room.characters).length);
+    let built = null;
+    if (build && typeof build === 'object') {
+      built = chargen.build(build.random ? { name } : {
+        name,
+        race: str(build.race, 40),
+        cls: str(build.cls, 40),
+        level: build.level,
+        method: build.method === 'roll' ? 'roll' : 'standard',
+        abilities: build.abilities,
+      });
+    }
+    const c = newCharacter(playerId, name, Object.keys(room.characters).length, built);
     room.characters[c.id] = c;
     this.touch(room);
     return c;
@@ -210,6 +252,34 @@ class RoomStore {
     }
     this.touch(room);
     return c;
+  }
+
+  giveItem(room, playerId, charId, itemId) {
+    this.requireController(room, playerId);
+    const c = room.characters[charId];
+    if (!c) throw new GameError('Няма такъв герой');
+    const it = lib.item(str(itemId, 80));
+    if (!it) throw new GameError('Няма такъв предмет');
+    c.items = c.items || [];
+    if (c.items.length >= 60) throw new GameError('Инвентарът е пълен');
+    c.items.push({ id: it.id, name: it.name, icon: it.icon, image: it.image });
+    if (it.damage) {
+      c.weapons = c.weapons || [];
+      c.weapons.push(chargen.weaponAttack(it, c.abilities, c.proficiency));
+    }
+    this.touch(room);
+    return it;
+  }
+
+  removeItem(room, playerId, charId, index) {
+    const c = room.characters[charId];
+    if (!c) throw new GameError('Няма такъв герой');
+    if (!this.canEditCharacter(room, playerId, c)) throw new GameError('Нямаш права за този герой');
+    const i = int(index, 0, 1000, -1);
+    if (!c.items || !c.items[i]) throw new GameError('Няма такъв предмет');
+    const [removed] = c.items.splice(i, 1);
+    this.touch(room);
+    return removed;
   }
 
   deleteCharacter(room, playerId, charId) {
@@ -232,6 +302,11 @@ class RoomStore {
     if ('gridSize' in patch) m.gridSize = int(patch.gridSize, 20, 200, m.gridSize);
     if ('cols' in patch) m.cols = int(patch.cols, 5, 100, m.cols);
     if ('rows' in patch) m.rows = int(patch.rows, 5, 100, m.rows);
+    if (m.tiles && (m.tiles.length !== m.rows || m.tiles[0].length !== m.cols || m.background)) {
+      m.tiles = null;
+      m.areas = null;
+      m.theme = null;
+    }
     for (const t of Object.values(room.tokens)) {
       t.x = Math.min(t.x, m.cols - t.size);
       t.y = Math.min(t.y, m.rows - t.size);
@@ -264,6 +339,12 @@ class RoomStore {
     }
     if (Object.keys(room.tokens).length >= 200) throw new GameError('Твърде много токени');
 
+    const monster = !characterId && data.monsterId ? lib.monster(str(data.monsterId, 80)) : null;
+    if (data.monsterId && !monster) throw new GameError('Няма такова чудовище');
+    if (monster) {
+      label = label || monster.name;
+      data = { ...data, hp: monster.hp, maxHp: monster.hp, size: SIZE_SQUARES[monster.size] || 1 };
+    }
     const size = int(data.size, 1, 4, 1);
     const token = {
       id: id(),
@@ -277,7 +358,17 @@ class RoomStore {
       hidden: isDM && Boolean(data.hidden),
       hp: characterId ? null : int(data.hp, 0, 9999, null),
       maxHp: characterId ? null : int(data.maxHp ?? data.hp, 0, 9999, null),
+      ac: monster ? monster.ac : int(data.ac, 0, 50, null),
+      monsterId: monster ? monster.id : null,
+      image: monster ? monster.image : null,
+      icon: characterId ? (room.characters[characterId].icon || null) : monster ? monster.icon : null,
+      encounter: Boolean(monster) && Boolean(room.adventure && room.adventure.status === 'combat'),
+      dead: false,
     };
+    if (token.x !== undefined) {
+      const free = mapgen.placeIn(room.map.tiles, room.map.cols, room.map.rows, { x: token.x, y: token.y, w: 1, h: 1 }, 1, new Set(), size)[0];
+      if (free) Object.assign(token, free);
+    }
     room.tokens[token.id] = token;
     this.touch(room);
     return token;
@@ -291,8 +382,15 @@ class RoomStore {
     const t = room.tokens[tokenId];
     if (!t) throw new GameError('Няма такъв токен');
     if (!this.canMoveToken(room, playerId, t)) throw new GameError('Не можеш да местиш този токен');
-    t.x = int(x, 0, room.map.cols - t.size, t.x);
-    t.y = int(y, 0, room.map.rows - t.size, t.y);
+    const nx = int(x, 0, room.map.cols - t.size, t.x);
+    const ny = int(y, 0, room.map.rows - t.size, t.y);
+    for (let i = 0; i < t.size; i += 1) {
+      for (let j = 0; j < t.size; j += 1) {
+        if (!mapgen.isPassable(room.map.tiles, nx + i, ny + j)) throw new GameError('Там има стена или препятствие');
+      }
+    }
+    t.x = nx;
+    t.y = ny;
     this.touch(room);
     return t;
   }
@@ -306,6 +404,8 @@ class RoomStore {
       if ('color' in patch) t.color = color(patch.color, t.color);
       if ('hp' in patch) t.hp = int(patch.hp, -9999, 9999, t.hp);
       if ('maxHp' in patch) t.maxHp = int(patch.maxHp, 0, 9999, t.maxHp);
+      if ('ac' in patch) t.ac = int(patch.ac, 0, 50, t.ac);
+      if ('hp' in patch) t.dead = Boolean(t.maxHp) && t.hp <= 0;
     }
     if ('size' in patch) t.size = int(patch.size, 1, 4, t.size);
     if ('hidden' in patch) t.hidden = Boolean(patch.hidden);
@@ -390,10 +490,12 @@ class RoomStore {
   }
 
   nextTurn(room, playerId) {
-    this.requireDM(room, playerId);
+    this.requireController(room, playerId);
     const init = room.initiative;
     if (init.entries.length === 0) return init;
     init.started = true;
+    init.acted = false;
+    init.bonusActed = false;
     init.turn += 1;
     if (init.turn >= init.entries.length) {
       init.turn = 0;
@@ -404,7 +506,7 @@ class RoomStore {
   }
 
   prevTurn(room, playerId) {
-    this.requireDM(room, playerId);
+    this.requireController(room, playerId);
     const init = room.initiative;
     if (init.entries.length === 0) return init;
     init.turn -= 1;
@@ -422,7 +524,7 @@ class RoomStore {
 
   clearInitiative(room, playerId) {
     this.requireDM(room, playerId);
-    room.initiative = { entries: [], turn: 0, round: 1, started: false };
+    room.initiative = { entries: [], turn: 0, round: 1, started: false, acted: false };
     this.touch(room);
   }
 
@@ -432,6 +534,7 @@ class RoomStore {
   // tokens or private messages for non-DMs.
   viewFor(room, playerId, onlineIds = new Set()) {
     const isDM = room.dmId === playerId;
+    const adv = room.adventure;
     const players = Object.values(room.players).map((p) => ({
       id: p.id,
       name: p.name,
@@ -441,15 +544,37 @@ class RoomStore {
     // Monster HP is the DM's secret; players only see that a token exists.
     const tokens = Object.values(room.tokens)
       .filter((t) => isDM || !t.hidden)
-      .map((t) => (isDM || t.characterId ? t : { ...t, hp: null, maxHp: null }));
+      .map((t) => {
+        if (isDM || t.characterId) return t;
+        const hpPct = t.maxHp ? Math.ceil((Math.max(0, t.hp) / t.maxHp) * 4) * 25 : null;
+        return { ...t, hp: null, maxHp: null, ac: null, hpPct };
+      });
     const entries = room.initiative.entries.filter((e) => isDM || !e.hidden);
     const currentEntry = room.initiative.entries[room.initiative.turn];
     return {
       code: room.code,
       name: room.name,
+      mode: room.mode || 'human',
       dmId: room.dmId,
+      hostId: room.hostId || room.dmId,
       me: playerId,
       isDM,
+      isController: this.isController(room, playerId),
+      autoMonsters: Boolean(room.autoMonsters),
+      adventure: adv ? {
+        id: adv.id,
+        title: adv.title,
+        level: adv.level,
+        theme: adv.theme,
+        summary: adv.summary,
+        intro: adv.intro,
+        status: adv.status,
+        index: adv.index,
+        twist: isDM || adv.status === 'victory' ? adv.twist : null,
+        encounters: adv.encounters.map((e, i) => (isDM || i <= adv.index ? {
+          title: e.title, text: e.text, monsters: isDM ? e.monsters : null, loot: isDM ? e.loot : null,
+        } : { title: '???' })),
+      } : null,
       players,
       characters: Object.values(room.characters),
       tokens,
@@ -457,6 +582,8 @@ class RoomStore {
       initiative: {
         entries,
         round: room.initiative.round,
+        acted: Boolean(room.initiative.acted),
+        bonusActed: Boolean(room.initiative.bonusActed),
         currentId: currentEntry && (isDM || !currentEntry.hidden) ? currentEntry.id : null,
       },
     };
@@ -491,4 +618,4 @@ class RoomStore {
   }
 }
 
-module.exports = { RoomStore, GameError, abilityMod, ABILITIES };
+module.exports = { RoomStore, GameError, abilityMod, ABILITIES, AI_ID };
