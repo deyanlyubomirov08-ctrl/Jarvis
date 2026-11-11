@@ -463,13 +463,14 @@ function humanoid(o) {
   const ghostOpts = (col, op) => (o.ghost ? { transparent: true, opacity: op, emissive: col, emissiveIntensity: 0.7 } : {});
   const skin = toon(mute(o.skin, 0.25), ghostOpts(o.skin, 0.55));
   const cloth = toon(mute(o.cloth, 0.6), ghostOpts(o.cloth, 0.5));
-  const coatCol = mute(darker(o.cloth, 0.38), 0.35);
+  const coatCol = o.coat !== undefined ? mute(o.coat, 0.15) : mute(darker(o.cloth, 0.38), 0.35);
   const coat = new THREE.MeshToonMaterial({
     color: coatCol, gradientMap, side: THREE.DoubleSide,
     transparent: Boolean(o.ghost), opacity: o.ghost ? 0.45 : 1,
     emissive: o.ghost ? o.cloth : 0x000000, emissiveIntensity: o.ghost ? 0.6 : 1,
   });
-  const trim = toon(o.cloth, { emissive: o.cloth, emissiveIntensity: 0.15 });
+  const trimCol = o.trim !== undefined ? o.trim : o.cloth;
+  const trim = toon(trimCol, { emissive: trimCol, emissiveIntensity: 0.15 });
   const leather = toon(0x3a2a20);
   const armor = o.armor ? toon(mute(o.armor, 0.3)) : null;
 
@@ -481,11 +482,15 @@ function humanoid(o) {
     }
   }
   // tattered long coat
-  const coatMesh = new THREE.Mesh(raggedCloak(seed, { top: 0.13 * B, bottom: 0.27 * B, height: 0.62 * H, open: o.armor ? 0.9 : 0.55 }), coat);
-  coatMesh.position.set(0, 0.36 * H, -0.01);
-  coatMesh.castShadow = true;
-  inked(coatMesh, 0.02);
-  g.add(coatMesh);
+  if (o.cloak !== 'none') {
+    const short = o.cloak === 'short';
+    const coatH = (short ? 0.32 : 0.62) * H;
+    const coatMesh = new THREE.Mesh(raggedCloak(seed, { top: 0.13 * B, bottom: (short ? 0.2 : 0.27) * B, height: coatH, open: o.armor ? 0.9 : 0.55 }), coat);
+    coatMesh.position.set(0, (short ? 0.56 : 0.36) * H, -0.01);
+    coatMesh.castShadow = true;
+    inked(coatMesh, 0.02);
+    g.add(coatMesh);
+  }
   // narrow torso with a slight hunch
   g.add(part(G.cyl, armor || cloth, { pos: [0, 0.6 * H, 0.01], rot: [0.08, 0, 0], scale: [0.12 * B, 0.3 * H, 0.1 * B] }));
   if (armor) g.add(part(G.sphere, armor, { pos: [0, 0.72 * H, 0], scale: [0.19 * B, 0.06 * H, 0.12 * B] }));
@@ -520,6 +525,18 @@ function humanoid(o) {
     g.add(part(G.cone, cloth, { pos: [0.03, headY + 0.27, -0.03], rot: [-0.3, 0, -0.25], scale: [0.11, 0.38, 0.11] }));
   } else if (o.wideHat) {
     g.add(wideHat(toon(mute(0x2a2026, 0.2)), trim, H, headY));
+  } else if (o.helm) {
+    const metal = toon(o.armor ? mute(o.armor, 0.3) : 0x8a8a94);
+    g.add(part(G.sphere, metal, { pos: [0, headY + 0.03, -0.005], scale: [0.11, 0.1, 0.115] }));
+    g.add(part(G.box, metal, { pos: [0, headY - 0.02, 0.09], scale: [0.03, 0.09, 0.02] }));
+    g.add(part(G.cone, trim, { pos: [0, headY + 0.15, -0.02], rot: [-0.5, 0, 0], scale: [0.025, 0.12, 0.025] }));
+  } else if (o.crown) {
+    const gold = toon(0xd4a24c, { emissive: 0x5a3a00, emissiveIntensity: 0.6 });
+    g.add(part(G.torus, gold, { pos: [0, headY + 0.08, 0], rot: [Math.PI / 2, 0, 0], scale: [0.09, 0.09, 0.5] }));
+    for (let k = 0; k < 5; k += 1) {
+      const a = (k / 5) * Math.PI * 2;
+      g.add(part(G.cone, gold, { pos: [Math.cos(a) * 0.085, headY + 0.12, Math.sin(a) * 0.085], scale: [0.018, 0.06, 0.018], ink: false }));
+    }
   } else if (!o.bones && !o.ghost) {
     // unkempt hair
     const hair = toon(mute(o.hair || 0x3a2418, 0.2));
@@ -665,9 +682,35 @@ function monsterModel(token) {
   return humanoid({ skin: 0xd8a888, cloth: token.color ? new THREE.Color(token.color).getHex() : 0x7a2a2a, hood: true, eyes: icon ? 0xffd24a : null });
 }
 
+const hexOr = (v, fallback) => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? new THREE.Color(v).getHex() : fallback);
+const triOr = (v, fallback) => (v === 'yes' ? true : v === 'no' ? false : fallback);
+
 function heroModel(c) {
-  const race = RACE_LOOK[c.raceId] || RACE_LOOK[(c.race || '').toLowerCase()] || RACE_LOOK.human;
-  const look = CLASS_LOOK[c.clsId || c.icon] || { prop: 'sword', armor: null };
+  const baseRace = RACE_LOOK[c.raceId] || RACE_LOOK[(c.race || '').toLowerCase()] || RACE_LOOK.human;
+  const baseLook = CLASS_LOOK[c.clsId || c.icon] || { prop: 'sword', armor: null };
+  const sk = c.skin || {};
+  const race = {
+    ...baseRace,
+    skin: hexOr(sk.skin, baseRace.skin),
+    ears: triOr(sk.ears, baseRace.ears),
+    beard: triOr(sk.beard, baseRace.beard),
+    tusks: triOr(sk.tusks, baseRace.tusks),
+    horns: sk.horns === 'none' ? null : hexOr(sk.horns, baseRace.horns),
+    eyes: sk.eyes === 'none' || !sk.eyes ? baseRace.eyes : hexOr(sk.eyes, baseRace.eyes),
+  };
+  const head = sk.headwear && sk.headwear !== 'auto' ? sk.headwear : null;
+  const look = {
+    ...baseLook,
+    prop: sk.prop && sk.prop !== 'auto' ? (sk.prop === 'none' ? null : sk.prop) : baseLook.prop,
+    armor: sk.armor === 'none' ? null : hexOr(sk.armor, baseLook.armor),
+    shield: triOr(sk.shield, baseLook.shield),
+    glow: hexOr(sk.glow, baseLook.glow),
+    hood: head ? head === 'hood' : baseLook.hood,
+    hat: head ? head === 'hat' : baseLook.hat,
+    wideHat: head ? head === 'wideHat' : baseLook.wideHat,
+    helm: head === 'helm',
+    crown: head === 'crown',
+  };
   const cloth = new THREE.Color(c.color || '#3498db').getHex();
   const hairs = [0x2a1a12, 0x6a3a1a, 0xc89a4a, 0xe8d8b8, 0x8a2a1a, 0x1a1a2a];
   let h = 0;
@@ -675,12 +718,17 @@ function heroModel(c) {
   const m = humanoid({
     ...race,
     cloth,
+    coat: sk.coat && /^#/.test(sk.coat) ? hexOr(sk.coat) : undefined,
+    trim: sk.trim && /^#/.test(sk.trim) ? hexOr(sk.trim) : undefined,
+    cloak: sk.cloak || 'long',
     armor: look.armor,
     hood: look.hood,
     hat: look.hat,
     wideHat: look.wideHat,
+    helm: look.helm,
+    crown: look.crown,
     wraps: look.wraps,
-    hair: hairs[h % hairs.length],
+    hair: hexOr(sk.hair, hairs[h % hairs.length]),
     seed: (h % 997) / 997,
   });
   addProp(m.group, look.prop, { ...race, bulk: race.bulk, glow: look.glow }, race.height);
@@ -689,6 +737,67 @@ function heroModel(c) {
     m.group.add(part(G.disc, toon(0xd4a24c), { pos: [-0.32 * race.bulk, 0.48 * race.height, 0.08], rot: [Math.PI / 2, 0, Math.PI / 2], scale: [0.06, 0.035, 0.06], ink: false }));
   }
   return m;
+}
+
+// A small spinning preview of a hero (used by the stylist in the sheet).
+export function createFigurePreview(container) {
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.35;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.domElement.className = 'figure-preview-canvas';
+  container.append(renderer.domElement);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50);
+  camera.position.set(0, 1.0, 3.4);
+  camera.lookAt(0, 0.62, 0);
+  scene.add(new THREE.HemisphereLight(0xc0a8d8, 0x3a2420, 1.4));
+  const key = new THREE.DirectionalLight(0xffc28a, 2.6);
+  key.position.set(-2, 3, 2);
+  const rim = new THREE.DirectionalLight(0x48d8ff, 2.2);
+  rim.position.set(2, 1.5, -2.5);
+  scene.add(key, rim);
+  const plinth = part(G.disc, toon(0x2a1c22), { pos: [0, -0.04, 0], scale: [0.5, 0.08, 0.5] });
+  scene.add(plinth);
+  const holder = new THREE.Group();
+  scene.add(holder);
+  let disposed = false;
+  let last = performance.now();
+  const resize = () => {
+    const w = container.clientWidth || 200;
+    const h = container.clientHeight || 220;
+    renderer.setSize(w, h);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  };
+  const ro = new ResizeObserver(resize);
+  ro.observe(container);
+  resize();
+  function loop(now) {
+    if (disposed) return;
+    requestAnimationFrame(loop);
+    const dt = Math.min(0.1, (now - last) / 1000);
+    last = now;
+    holder.rotation.y += dt * 0.7;
+    renderer.render(scene, camera);
+  }
+  requestAnimationFrame(loop);
+  return {
+    show(char) {
+      holder.clear();
+      const m = heroModel(char);
+      m.group.scale.setScalar(1.25);
+      holder.add(m.group);
+      const ring = part(G.disc, toon(new THREE.Color(char.color || '#888').getHex(), { emissive: new THREE.Color(char.color || '#888').getHex(), emissiveIntensity: 0.15 }), { pos: [0, 0.01, 0], scale: [0.42, 0.04, 0.42], ink: false });
+      holder.add(ring);
+    },
+    dispose() {
+      disposed = true;
+      ro.disconnect();
+      renderer.dispose();
+      renderer.domElement.remove();
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1532,7 +1641,7 @@ export function createTable(container, hooks) {
   }
 
   function buildModel(token, char) {
-    const entry = libraryFor(token, char);
+    const entry = char && char.skin ? null : libraryFor(token, char);
     if (entry) return instantiate(entry);
     if (char) return heroModel(char);
     return monsterModel(token);
@@ -1603,7 +1712,7 @@ export function createTable(container, hooks) {
   }
 
   function modelKeyFor(token, char) {
-    const lib = (libraryFor(token, char) || {}).id || '';
+    const lib = char && char.skin ? `skin:${JSON.stringify(char.skin)}` : (libraryFor(token, char) || {}).id || '';
     return char ? `${char.raceId}|${char.clsId}|${char.color}|${char.icon}|${token.size}|${lib}` : `${token.monsterId}|${token.icon}|${token.label}|${token.color}|${token.size}|${lib}`;
   }
 

@@ -78,6 +78,36 @@ async function ask(room, instruction) {
   }
 }
 
+// Asks for a JSON answer that follows `schema` (structured outputs).
+// Resolves to the parsed object, or null when the model is unavailable.
+async function structured(system, content, schema, maxTokens = 2000) {
+  if (disabled) return null;
+  try {
+    const response = await getClient().beta.messages.create({
+      model: MODEL,
+      max_tokens: maxTokens,
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default',
+      output_config: { effort: 'low', format: { type: 'json_schema', schema } },
+      system,
+      messages: [{ role: 'user', content }],
+    });
+    if (response.stop_reason === 'refusal' || response.stop_reason === 'max_tokens') return null;
+    const text = response.content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+    return text ? JSON.parse(text) : null;
+  } catch (err) {
+    if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError) {
+      console.error('AI: невалидни данни за достъп — изключвам AI функциите.');
+      disabled = true;
+    } else if (err instanceof Anthropic.APIError) {
+      console.error(`AI: грешка ${err.status}: ${err.message}`);
+    } else {
+      console.error('AI:', err.message);
+    }
+    return null;
+  }
+}
+
 const narrateScene = (room, sceneText) => ask(room, `Разкажи драматично тази сцена, като запазиш фактите: ${sceneText}`);
 
 const reply = (room, playerName, text) => ask(room, `Играчът ${playerName} казва или прави: „${text}“. Отговори като Водещ.`);
@@ -104,4 +134,4 @@ function fallbackReply(text) {
   return generic[Math.floor(Math.random() * generic.length)];
 }
 
-module.exports = { enabled, narrateScene, reply, fallbackReply, describeRoom };
+module.exports = { enabled, narrateScene, reply, fallbackReply, describeRoom, structured };

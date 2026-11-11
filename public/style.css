@@ -419,3 +419,20 @@ button.danger:hover { box-shadow: 0 0 12px #ff3d6e55; }
 .nameplate .np-name { display: none; }
 .nameplate.current .np-name, .nameplate.selected .np-name, .nameplate.hover .np-name { display: inline; }
 .nameplate.current, .nameplate.selected, .nameplate.hover { z-index: 5; }
+
+/* ---- stylist ("Ателие за облик") ---- */
+.skin-studio { border: 1px solid var(--neon); border-radius: 8px; background: linear-gradient(135deg, #1d2430, #16111e 70%); box-shadow: 0 0 18px #2fe6d61a; }
+.skin-studio summary { cursor: pointer; padding: 8px 10px; font-family: var(--font-display); color: var(--neon); letter-spacing: .04em; }
+.studio-body { display: grid; grid-template-columns: 150px 1fr; gap: 8px; padding: 0 8px 8px; }
+.figure-preview { height: 210px; border-radius: 6px; overflow: hidden; background: radial-gradient(ellipse at 50% 70%, #3a2a3a, #0c0a12 75%); }
+.figure-preview-canvas { width: 100%; height: 100%; display: block; }
+.studio-chat { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.studio-log { height: 150px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.studio-msg { font-size: 12px; padding: 5px 8px; border-radius: 8px; max-width: 92%; line-height: 1.35; }
+.studio-msg.user { align-self: flex-end; background: #3a2a14; border: 1px solid var(--brass-dim); }
+.studio-msg.bot { align-self: flex-start; background: #14262a; border: 1px solid #2fe6d655; }
+.studio-msg.thinking { opacity: .7; font-style: italic; }
+.studio-form { display: flex; gap: 4px; }
+.studio-form input { flex: 1; min-width: 0; font-size: 12px; }
+.skin-studio .row button { font-size: 11px; }
+@media (max-width: 480px) { .studio-body { grid-template-columns: 1fr; } }

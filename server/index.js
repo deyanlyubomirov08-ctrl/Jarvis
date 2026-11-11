@@ -14,6 +14,7 @@ const mapgen = require('./mapgen');
 const aidm = require('./aidm');
 const combat = require('./combat');
 const narrator = require('./narrator');
+const skins = require('./skins');
 
 const PORT = Number(process.env.PORT) || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
@@ -169,6 +170,7 @@ function postScene(room, text) {
 // ---- Automated turns (monsters, downed heroes) ----
 
 const automation = new Map(); // room code -> timer
+const stylistBusy = new Set(); // character ids with a stylist request in flight
 
 function scheduleAutomation(room) {
   if (automation.has(room.code) || !aidm.pendingAutomation(room)) return;
@@ -365,6 +367,37 @@ io.on('connection', (socket) => {
 
   on('char:delete', (data, room, player) => {
     store.deleteCharacter(room, player.id, data.id);
+  });
+
+  // ---- Stylist: custom look for the 3D figure ----
+
+  on('skin:chat', async (data, room, player) => {
+    const c = room.characters[data.characterId];
+    if (!c) throw new GameError('Няма такъв герой');
+    if (!store.canEditCharacter(room, player.id, c)) throw new GameError('Нямаш права за този герой');
+    const fromSheet = Boolean(data.fromSheet);
+    const text = String(data.text || '').trim().slice(0, 600);
+    if (!text && !fromSheet) throw new GameError('Опиши какъв облик искаш');
+    if (stylistBusy.has(c.id)) throw new GameError('Шивачът още работи по предишното желание');
+    stylistBusy.add(c.id);
+    try {
+      const result = await skins.style(c, text, { fromSheetOnly: fromSheet });
+      c.skinChat = [...(c.skinChat || []), { role: 'user', text: fromSheet ? '✨ Предложи облик по листа на героя' : text }, { role: 'bot', text: result.reply }].slice(-20);
+      c.skin = result.skin;
+      store.touch(room);
+      return { reply: result.reply, ai: result.ai };
+    } finally {
+      stylistBusy.delete(c.id);
+    }
+  });
+
+  on('skin:reset', (data, room, player) => {
+    const c = room.characters[data.characterId];
+    if (!c) throw new GameError('Няма такъв герой');
+    if (!store.canEditCharacter(room, player.id, c)) throw new GameError('Нямаш права за този герой');
+    c.skin = null;
+    c.skinChat = [];
+    store.touch(room);
   });
 
   on('char:giveItem', (data, room, player) => {

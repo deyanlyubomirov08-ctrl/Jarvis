@@ -77,6 +77,8 @@ function newCharacter(ownerId, name, colorIdx, build = null) {
     xp: 0,
     gold: 0,
     icon: null,
+    skin: null,      // look chosen in the stylist ("Ателие за облик")
+    skinChat: [],
   };
   if (!build) return base;
   return { ...base, ...build, id: base.id, ownerId, color: build.color || base.color };

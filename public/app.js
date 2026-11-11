@@ -865,6 +865,7 @@
         h('label', { style: { flex: 1 } }, 'Име', h('input', { dataset: { field: 'name' }, maxlength: 60 })),
         h('label', {}, 'Цвят', h('input', { type: 'color', dataset: { field: 'color' } }))),
       h('div', { class: 'xp-bar', dataset: { xp: '1' } }),
+      skinStudio(c, editable),
       h('div', { class: 'sheet-grid' },
         field('Раса', 'race', { maxlength: 60 }),
         field('Клас', 'cls', { maxlength: 60 }),
@@ -911,6 +912,93 @@
     }
   }
 
+  // ----- Stylist ("Ателие за облик") -----
+
+  let previewMod = null;
+  function skinStudio(c, editable) {
+    const box = h('details', { class: 'skin-studio', open: true },
+      h('summary', {}, '🎨 Ателие за облик'),
+      h('div', { class: 'studio-body' },
+        h('div', { class: 'figure-preview', dataset: { preview: '1' } }),
+        h('div', { class: 'studio-chat' },
+          h('div', { class: 'studio-log', dataset: { skinlog: '1' } }),
+          editable ? h('form', {
+            class: 'studio-form',
+            onsubmit: async (e) => {
+              e.preventDefault();
+              const input = e.target.elements.wish;
+              const text = input.value.trim();
+              if (!text) return;
+              await askStylist(c.id, { text }, input);
+            },
+          },
+          h('input', { name: 'wish', maxlength: 600, placeholder: 'напр. тъмночервено палто, сребърна броня и рога', autocomplete: 'off' }),
+          h('button', { class: 'primary', title: 'Изпрати на шивача' }, '➤')) : null,
+          editable ? h('div', { class: 'row' },
+            h('button', { type: 'button', onclick: () => askStylist(c.id, { fromSheet: true }) }, '✨ Предложи по листа'),
+            h('button', { type: 'button', class: 'ghost', onclick: () => emit('skin:reset', { characterId: c.id }) }, '↺ Нулирай облика')) : null)));
+    return box;
+  }
+
+  async function askStylist(characterId, payload, input) {
+    const log = $('#char-sheet [data-skinlog]');
+    const thinking = h('div', { class: 'studio-msg bot thinking' }, 'Шивачът мисли…');
+    if (log) {
+      if (payload.text) log.append(h('div', { class: 'studio-msg user' }, payload.text));
+      log.append(thinking);
+      log.scrollTop = log.scrollHeight;
+    }
+    if (input) input.disabled = true;
+    const res = await emit('skin:chat', { characterId, ...payload });
+    thinking.remove();
+    if (input) {
+      input.disabled = false;
+      if (res.ok) input.value = '';
+      input.focus();
+    }
+  }
+
+  async function mountPreview(c) {
+    const host = $('#char-sheet [data-preview]');
+    if (!host) return;
+    if (app.preview) {
+      app.preview.dispose();
+      app.preview = null;
+    }
+    app.previewKey = null;
+    try {
+      previewMod = previewMod || await import('./scene3d.js');
+      if (!previewMod.webglSupported()) throw new Error('no webgl');
+      if (!host.isConnected) return;
+      app.preview = previewMod.createFigurePreview(host);
+      updatePreview(c);
+    } catch {
+      host.replaceChildren(h('span', { class: 'hint' }, '3D прегледът не се поддържа тук.'));
+    }
+  }
+
+  function updatePreview(c) {
+    if (!app.preview) return;
+    const key = JSON.stringify([c.skin, c.color, c.raceId, c.clsId, c.race]);
+    if (key === app.previewKey) return;
+    app.previewKey = key;
+    app.preview.show(c);
+  }
+
+  function renderSkinLog(c) {
+    const log = $('#char-sheet [data-skinlog]');
+    if (!log) return;
+    const msgs = c.skinChat || [];
+    const sig = `${msgs.length}|${msgs.length ? msgs[msgs.length - 1].text : ''}`;
+    if (log.dataset.sig === sig) return;
+    log.dataset.sig = sig;
+    log.replaceChildren(
+      msgs.length ? null : h('div', { class: 'studio-msg bot' }, 'Здравей! Аз съм шивачът. Опиши ми как искаш да изглежда героят — цветове, шапка или шлем, наметало, броня, оръжие, рога, светещи очи — или натисни „Предложи по листа“.'),
+      ...msgs.map((m) => h('div', { class: `studio-msg ${m.role === 'user' ? 'user' : 'bot'}` }, m.text)),
+    );
+    log.scrollTop = log.scrollHeight;
+  }
+
   function updateMods() {
     for (const [key] of ABILITIES) {
       const input = $(`#char-sheet [data-field="abilities.${key}"]`);
@@ -948,12 +1036,17 @@
     if (!c) {
       sheet.classList.add('hidden');
       app.sheetFor = null;
+      if (app.preview) {
+        app.preview.dispose();
+        app.preview = null;
+      }
       return;
     }
     sheet.classList.remove('hidden');
     if (app.sheetFor !== c.id) {
       buildSheet(c);
       app.sheetFor = c.id;
+      mountPreview(c);
     }
     for (const el of $$('[data-field]', sheet)) {
       if (el === document.activeElement) continue;
@@ -964,6 +1057,8 @@
     }
     updateMods();
     renderSheetLists(c);
+    renderSkinLog(c);
+    updatePreview(c);
   }
 
   async function placeCharacter(characterId) {
