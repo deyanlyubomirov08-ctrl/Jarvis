@@ -971,6 +971,62 @@ export function createTable(container, hooks) {
     return { group, height: src.height + (entry.hover || 0), mixer, clips, imported: true };
   }
 
+  // ---- environment kit (Blender-made, public/models/env/*.glb) ----
+  const ENV_NAMES = ['wall-a', 'wall-b', 'wall-crypt', 'rock-a', 'rock-b', 'rock-c', 'tree-a', 'tree-b', 'tree-c',
+    'deadtree-a', 'deadtree-b', 'crate', 'barrel', 'bones', 'gravestone', 'mushrooms', 'pillar', 'door', 'crystals'];
+  const envKit = new Map(); // name → BufferGeometry with vertex colours
+  const envMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap });
+  function loadEnvKit() {
+    let pending = ENV_NAMES.length;
+    const done = () => {
+      pending -= 1;
+      if (pending === 0 && envKit.size && state.view) {
+        state.mapKey = null; // rebuild the terrain with the kit
+        update(state.view);
+      }
+    };
+    for (const name of ENV_NAMES) {
+      gltfLoader.load(`models/env/${name}.glb`, (gltf) => {
+        let geo = null;
+        gltf.scene.updateMatrixWorld(true);
+        gltf.scene.traverse((o) => {
+          if (o.isMesh && !geo) {
+            geo = o.geometry.clone();
+            geo.applyMatrix4(o.matrixWorld);
+          }
+        });
+        if (geo) {
+          if (!geo.attributes.normal) geo.computeVertexNormals();
+          envKit.set(name, geo);
+        }
+        done();
+      }, undefined, done);
+    }
+  }
+
+  // Adds instanced copies of a kit piece (with ink outlines) to the world.
+  // items: [{ x, z, y, rot, scale: [sx, sy, sz], tint }]
+  function placeKit(name, items, { ink = 0.02, shadow = true } = {}) {
+    const geo = envKit.get(name);
+    if (!geo || !items.length) return false;
+    const mesh = new THREE.InstancedMesh(geo, envMat, items.length);
+    const outline = ink ? new THREE.InstancedMesh(geo, inkExtrude(ink), items.length) : null;
+    const m4 = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    items.forEach((it, i) => {
+      q.setFromEuler(new THREE.Euler(0, it.rot || 0, 0));
+      m4.compose(new THREE.Vector3(it.x, it.y || 0, it.z), q, new THREE.Vector3(...(it.scale || [1, 1, 1])));
+      mesh.setMatrixAt(i, m4);
+      mesh.setColorAt(i, new THREE.Color().setScalar(it.tint || 1));
+      if (outline) outline.setMatrixAt(i, m4);
+    });
+    mesh.castShadow = shadow;
+    mesh.receiveShadow = true;
+    if (outline) world.add(outline);
+    world.add(mesh);
+    return true;
+  }
+
   // Set pieces such as a ship on the water.
   const propsGroup = new THREE.Group();
   scene.add(propsGroup);
@@ -1132,8 +1188,40 @@ export function createTable(container, hooks) {
       }
     }
 
-    // walls: brick blocks (dungeon/crypt) or rough boulders (cave)
-    if (walls.length) {
+    // walls from the Blender kit: stone blocks (dungeon/crypt) or boulders (cave);
+    // interior walls stay as low dark blocks so rooms read clearly
+    let kitWalls = false;
+    if (walls.length && envKit.size) {
+      const cave = map.theme === 'cave';
+      const near = walls.filter((w) => w.nearFloor);
+      const names = cave ? ['rock-a', 'rock-b', 'rock-c'] : map.theme === 'crypt' ? ['wall-crypt'] : ['wall-a', 'wall-b'];
+      const groups = new Map(names.map((n) => [n, []]));
+      near.forEach((w) => {
+        const p = toWorld(w.x, w.y);
+        const name = names[Math.floor(rnd() * names.length)];
+        const h = 0.85 + rnd() * 0.3;
+        groups.get(name).push(cave
+          ? { x: p.x + (rnd() - 0.5) * 0.15, z: p.z + (rnd() - 0.5) * 0.15, rot: rnd() * 6.28, scale: [1.05 + rnd() * 0.3, 0.7 + rnd() * 0.8, 1.05 + rnd() * 0.3], tint: 0.42 + rnd() * 0.2 }
+          : { x: p.x, z: p.z, rot: Math.floor(rnd() * 4) * Math.PI / 2, scale: [1, h, 1], tint: 0.42 + rnd() * 0.16 });
+      });
+      kitWalls = [...groups].every(([n, items]) => !items.length || placeKit(n, items, { ink: 0.015 }));
+      if (kitWalls) {
+        const far = walls.filter((w) => !w.nearFloor);
+        if (far.length) {
+          const mesh = new THREE.InstancedMesh(G.box, toon(darker(new THREE.Color(mood.wall[2]).getHex(), 0.8)), far.length);
+          const m4 = new THREE.Matrix4();
+          far.forEach((w, i) => {
+            const p = toWorld(w.x, w.y);
+            const h = 0.25 + rnd() * 0.1;
+            m4.compose(new THREE.Vector3(p.x, h / 2, p.z), new THREE.Quaternion(), new THREE.Vector3(1, h, 1));
+            mesh.setMatrixAt(i, m4);
+          });
+          mesh.receiveShadow = true;
+          world.add(mesh);
+        }
+      }
+    }
+    if (walls.length && !kitWalls) {
       const cave = map.theme === 'cave';
       const geo = cave ? new THREE.DodecahedronGeometry(0.62, 0) : new THREE.BoxGeometry(1, 1, 1);
       const side = toon(0xffffff, { map: cave ? blotTexture(mood.wall, 21) : brickTexture(mood.wall, 17) });
@@ -1165,8 +1253,21 @@ export function createTable(container, hooks) {
       world.add(ink, mesh);
     }
 
-    // trees
-    if (trees.length) {
+    // trees from the kit: leafy trees in the forest, dead ones in the swamp
+    let kitTrees = false;
+    if (trees.length && envKit.size) {
+      const names = map.theme === 'swamp' ? ['deadtree-a', 'deadtree-b'] : ['tree-a', 'tree-b', 'tree-c'];
+      const groups = new Map(names.map((n) => [n, []]));
+      trees.forEach((t) => {
+        const p = toWorld(t.x, t.y);
+        const sc = 0.95 + rnd() * 0.45;
+        groups.get(names[Math.floor(rnd() * names.length)]).push({
+          x: p.x + (rnd() - 0.5) * 0.3, z: p.z + (rnd() - 0.5) * 0.3, rot: rnd() * 6.28, scale: [sc, sc * (0.9 + rnd() * 0.3), sc], tint: 0.85 + rnd() * 0.3,
+        });
+      });
+      kitTrees = [...groups].every(([n, items]) => !items.length || placeKit(n, items, { ink: 0.018 }));
+    }
+    if (trees.length && !kitTrees) {
       const swamp = map.theme === 'swamp';
       const trunkGeo = new THREE.CylinderGeometry(0.09, 0.16, 1, 7);
       const crownGeo = new THREE.IcosahedronGeometry(0.55, 1);
@@ -1246,7 +1347,12 @@ export function createTable(container, hooks) {
 
     // doors and bridges
     const wood = toon(0x6b4423);
-    for (const d of doors) {
+    const kitDoors = envKit.has('door') && placeKit('door', doors.map((d) => {
+      const p = toWorld(d.x, d.y);
+      const horizontal = !passable(d.x - 1, d.y) && !passable(d.x + 1, d.y);
+      return { x: p.x, z: p.z, rot: horizontal ? 0 : Math.PI / 2 };
+    }), { ink: 0.012 });
+    for (const d of kitDoors ? [] : doors) {
       const p = toWorld(d.x, d.y);
       const horizontal = !passable(d.x - 1, d.y) && !passable(d.x + 1, d.y);
       const door = part(G.box, wood, { pos: [p.x, 0.55, p.z], scale: horizontal ? [1, 1.1, 0.14] : [0.14, 1.1, 1] });
@@ -1262,9 +1368,41 @@ export function createTable(container, hooks) {
 
     state.waterCells = water;
     state.floorCells = floorCells;
+    if (envKit.size) scatterDecor(map, floorCells, walls, rnd);
     addAccents(map, mood, floorCells, walls, rnd);
     addMotes(map, mood);
     placeProps();
+  }
+
+  // Small props along the walls: crates and barrels in dungeons, bones and
+  // graves in crypts, crystals and mushrooms in caves, and so on.
+  const DECOR = {
+    dungeon: [['crate', 1], ['barrel', 1], ['bones', 0.6], ['pillar', 0.3]],
+    crypt: [['bones', 1], ['gravestone', 0.8], ['pillar', 0.5]],
+    cave: [['crystals', 1], ['mushrooms', 0.8], ['bones', 0.4], ['rock-a', 0.4]],
+    forest: [['mushrooms', 1], ['rock-b', 0.6], ['crate', 0.15]],
+    swamp: [['mushrooms', 1], ['bones', 0.5], ['deadtree-b', 0.2]],
+  };
+  function scatterDecor(map, floorCells, walls, rnd) {
+    const kinds = DECOR[map.theme];
+    if (!kinds) return;
+    const wallSet = new Set(walls.map((w) => `${w.x},${w.y}`));
+    const outdoor = map.theme === 'forest' || map.theme === 'swamp';
+    const groups = new Map();
+    const total = kinds.reduce((a, [, w]) => a + w, 0);
+    for (const c of floorCells) {
+      const sides = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => wallSet.has(`${c.x + dx},${c.y + dy}`));
+      if (!outdoor && !sides.length) continue;
+      if (rnd() > (outdoor ? 0.035 : 0.12)) continue;
+      let pickW = rnd() * total;
+      const [name] = kinds.find(([, w]) => (pickW -= w) <= 0) || kinds[0];
+      const p = toWorld(c.x, c.y);
+      const [dx, dy] = sides[0] || [0, 0];
+      const small = name.startsWith('rock') || name.startsWith('deadtree') ? 0.45 : 0.75 + rnd() * 0.3;
+      if (!groups.has(name)) groups.set(name, []);
+      groups.get(name).push({ x: p.x + dx * 0.3 + (rnd() - 0.5) * 0.2, z: p.z + dy * 0.3 + (rnd() - 0.5) * 0.2, rot: rnd() * 6.28, scale: [small, small, small], tint: 0.85 + rnd() * 0.3 });
+    }
+    for (const [name, items] of groups) placeKit(name, items, { ink: 0.01 });
   }
 
   // Braziers, candles, crystals, fireflies or chem lamps — each with light.
@@ -2028,6 +2166,7 @@ export function createTable(container, hooks) {
 
   setQuality('high');
   loadLibrary();
+  loadEnvKit();
   animate();
 
   function dispose() {
