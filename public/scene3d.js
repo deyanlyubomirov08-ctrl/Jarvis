@@ -13,6 +13,8 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 
 export function webglSupported() {
   try {
@@ -267,6 +269,23 @@ function inked(mesh, thickness = 0.045) {
   return mesh;
 }
 
+// Outline for detailed (imported) meshes: pushes back faces out along the
+// normals, which works for any shape, unlike scaling a hull.
+const inkExtrudeCache = new Map();
+function inkExtrude(thickness) {
+  const key = thickness.toFixed(5);
+  if (!inkExtrudeCache.has(key)) {
+    const m = new THREE.MeshBasicMaterial({ color: 0x120a12, side: THREE.BackSide });
+    m.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+        transformed += normalize(normal) * ${key};`);
+    };
+    m.customProgramCacheKey = () => `ink-${key}`;
+    inkExtrudeCache.set(key, m);
+  }
+  return inkExtrudeCache.get(key);
+}
+
 function part(geometry, material, { pos = [0, 0, 0], rot = [0, 0, 0], scale = null, ink = true, shadow = true } = {}) {
   const m = new THREE.Mesh(geometry, material);
   m.position.set(...pos);
@@ -308,16 +327,16 @@ const RACE_LOOK = {
 
 const CLASS_LOOK = {
   barbarian: { prop: 'greataxe', armor: null },
-  bard: { prop: 'lute', armor: null },
+  bard: { prop: 'fiddle', armor: null, wideHat: true },
   cleric: { prop: 'mace', armor: 0xb9b2a6, shield: true, glow: 0xffe27a },
   druid: { prop: 'druidstaff', armor: null, glow: 0x9dff6a },
   fighter: { prop: 'sword', armor: 0x9aa3ad, shield: true },
   monk: { prop: null, armor: null, wraps: true },
   paladin: { prop: 'hammer', armor: 0xd6c08a, shield: true, glow: 0xffe27a },
-  ranger: { prop: 'bow', armor: null, hood: true },
+  ranger: { prop: 'bow', armor: null, wideHat: true },
   rogue: { prop: 'daggers', armor: null, hood: true },
   sorcerer: { prop: 'orbs', armor: null, glow: 0xff6fd0 },
-  warlock: { prop: 'tome', armor: null, glow: 0xb070ff, hood: true },
+  warlock: { prop: 'tome', armor: null, glow: 0xb070ff, wideHat: true },
   wizard: { prop: 'staff', armor: null, hat: true, glow: 0x7fe7ff },
 };
 
@@ -368,6 +387,11 @@ function addProp(g, kind, look, H) {
       g.add(part(G.sphere, toon(0x9a6232), { pos: [0.05, 0.5 * H, 0.2], scale: [0.13, 0.15, 0.05] }));
       g.add(part(G.box, wood, { pos: [0.18, 0.62 * H, 0.2], rot: [0, 0, -0.9], scale: [0.04, 0.3, 0.03] }));
       break;
+    case 'fiddle':
+      g.add(part(G.sphere, toon(0x7a3a1a), { pos: [-0.08, 0.66 * H, 0.12], rot: [0.3, 0, 0.9], scale: [0.07, 0.11, 0.035] }));
+      g.add(part(G.box, toon(0x2a1a12), { pos: [-0.18, 0.74 * H, 0.1], rot: [0.3, 0, 0.9], scale: [0.025, 0.16, 0.02] }));
+      g.add(part(G.cyl, toon(0xd8ccb4), { pos: [0.08, 0.6 * H, 0.17], rot: [0, 0, -0.7], scale: [0.01, 0.42, 0.01], ink: false }));
+      break;
     case 'orbs':
       for (const p of [R, L]) {
         g.add(part(G.lowSphere, toon(glow, { emissive: glow, emissiveIntensity: 2.5 }), { pos: [p[0], p[1] + 0.05, p[2] + 0.06], scale: [0.06, 0.06, 0.06], ink: false }));
@@ -382,57 +406,133 @@ function addProp(g, kind, look, H) {
   }
 }
 
-// A stylised humanoid; returns the group (feet at y = 0) and its height.
-function humanoid(o) {
-  const H = o.height || 1;
-  const B = o.bulk || 1;
-  const g = new THREE.Group();
-  const skin = toon(o.skin, o.ghost ? { transparent: true, opacity: 0.55, emissive: o.skin, emissiveIntensity: 0.6 } : {});
-  const cloth = toon(o.cloth, o.ghost ? { transparent: true, opacity: 0.5, emissive: o.cloth, emissiveIntensity: 0.5 } : {});
-  const clothDark = toon(darker(o.cloth, 0.55), o.ghost ? { transparent: true, opacity: 0.45 } : {});
-  const armor = o.armor ? toon(o.armor) : null;
+// Muted "sculpted miniature" palette: colours are pulled towards ash and
+// bone so figures read like painted resin, with the token colour kept for
+// trims (scarf, sash, hat band).
+function mute(hex, k = 0.55) {
+  const c = new THREE.Color(hex);
+  const ash = new THREE.Color(0x8a8076);
+  return c.lerp(ash, k).getHex();
+}
 
-  if (!o.ghost) {
-    for (const s of [-1, 1]) {
-      g.add(part(G.capsule, o.bones ? skin : clothDark, { pos: [0.08 * B * s, 0.17 * H, 0], scale: [0.065 * B, 0.12 * H, 0.065 * B] }));
+// An open coat with a torn, jagged hem — the signature of the style.
+function raggedCloak(seed, { top = 0.16, bottom = 0.3, height = 0.7, open = 0.5, tear = 0.22 } = {}) {
+  const rnd = rngFrom(seed);
+  const segs = 22;
+  const geo = new THREE.CylinderGeometry(top, bottom, height, segs, 6, true, Math.PI / 2 + open / 2, Math.PI * 2 - open);
+  const pos = geo.attributes.position;
+  const cuts = Array.from({ length: segs + 1 }, () => rnd());
+  for (let i = 0; i < pos.count; i += 1) {
+    const y = pos.getY(i);
+    const t = (height / 2 - y) / height; // 0 top → 1 hem
+    const seg = i % (segs + 1);
+    const flutter = (rnd() - 0.5) * 0.03 * t;
+    pos.setX(i, pos.getX(i) * (1 + flutter * 4));
+    pos.setZ(i, pos.getZ(i) * (1 + flutter * 4));
+    if (t > 0.8) {
+      // tear the hem into uneven strips
+      const strip = cuts[seg] > 0.5 ? 1 : 0.35;
+      pos.setY(i, y + tear * height * (1 - strip) * (t - 0.8) * 5 * (0.6 + rnd() * 0.4));
     }
   }
-  // cloak / skirt
-  g.add(part(new THREE.ConeGeometry(1, 1, 12, 1, true), clothDark, { pos: [0, 0.44 * H, -0.07], rot: [-0.12, 0, 0], scale: [0.2 * B, 0.52 * H, 0.1 * B] }));
-  g.children[g.children.length - 1].material = clothDark.clone();
-  g.children[g.children.length - 1].material.side = THREE.DoubleSide;
-  // torso
-  g.add(part(G.cyl, armor || cloth, { pos: [0, 0.53 * H, 0], scale: [0.15 * B, 0.34 * H, 0.12 * B] }));
-  g.add(part(G.cone, cloth, { pos: [0, 0.32 * H, 0], rot: [Math.PI, 0, 0], scale: [0.17 * B, 0.14 * H, 0.14 * B] }));
-  if (armor) g.add(part(G.sphere, armor, { pos: [0, 0.66 * H, 0], scale: [0.21 * B, 0.07 * H, 0.14 * B] }));
-  // belt
-  g.add(part(G.cyl, toon(0x3a2418), { pos: [0, 0.42 * H, 0], scale: [0.155 * B, 0.035, 0.125 * B], ink: false }));
-  // arms
-  for (const s of [-1, 1]) {
-    g.add(part(G.capsule, o.wraps ? toon(0xeee2c8) : (armor || cloth), { pos: [0.22 * B * s, 0.52 * H, 0.02], rot: [0, 0, 0.28 * s], scale: [0.05 * B, 0.13 * H, 0.05 * B] }));
-    g.add(part(G.sphere, skin, { pos: [0.26 * B * s, 0.38 * H, 0.04], scale: [0.045, 0.045, 0.045] }));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function wideHat(mat, band, H, headY) {
+  const g = new THREE.Group();
+  const brim = new THREE.CylinderGeometry(0.26, 0.28, 0.02, 18);
+  const pos = brim.attributes.position;
+  for (let i = 0; i < pos.count; i += 1) {
+    const r = Math.hypot(pos.getX(i), pos.getZ(i));
+    if (r > 0.2) pos.setY(i, pos.getY(i) - (r - 0.2) * 0.5 + Math.sin(Math.atan2(pos.getZ(i), pos.getX(i)) * 3) * 0.02);
   }
-  // head
-  const headY = 0.82 * H;
-  g.add(part(G.sphere, skin, { pos: [0, headY, 0], scale: [0.115, 0.13, 0.115] }));
-  if (o.snout) g.add(part(G.cone, skin, { pos: [0, headY - 0.02, 0.13], rot: [Math.PI / 2, 0, 0], scale: [0.07, 0.14, 0.06] }));
-  if (o.tusks) for (const s of [-1, 1]) g.add(part(G.cone, toon(0xf5ecd6), { pos: [0.05 * s, headY - 0.06, 0.11], scale: [0.015, 0.05, 0.015], ink: false }));
-  if (o.ears) for (const s of [-1, 1]) g.add(part(G.cone, skin, { pos: [0.13 * s, headY + 0.02, 0], rot: [0, 0, -1.2 * s], scale: [0.03, 0.12, 0.03] }));
-  if (o.horns) for (const s of [-1, 1]) g.add(part(G.cone, toon(o.horns), { pos: [0.07 * s, headY + 0.13, -0.02], rot: [-0.4, 0, -0.35 * s], scale: [0.03, 0.12, 0.03] }));
-  if (o.beard) g.add(part(G.cone, toon(o.hair || 0x8a4a2a), { pos: [0, headY - 0.1, 0.07], rot: [Math.PI, 0, 0], scale: [0.11, 0.2, 0.07] }));
+  brim.computeVertexNormals();
+  g.add(part(brim, mat, { pos: [0, headY + 0.08, 0], rot: [0.12, 0, 0.05] }));
+  g.add(part(new THREE.CylinderGeometry(0.1, 0.13, 0.2, 12), mat, { pos: [0, headY + 0.18, -0.01], rot: [0.15, 0, -0.12] }));
+  g.add(part(G.cyl, band, { pos: [0, headY + 0.11, 0], rot: [0.12, 0, 0.05], scale: [0.132, 0.035, 0.132], ink: false }));
+  return g;
+}
+
+// A stylised gaunt humanoid; returns the group (feet at y = 0) and its height.
+function humanoid(o) {
+  const H = (o.height || 1) * 1.12;
+  const B = (o.bulk || 1) * 0.92;
+  const seed = Math.floor((o.seed || 1) * 1000);
+  const g = new THREE.Group();
+  const ghostOpts = (col, op) => (o.ghost ? { transparent: true, opacity: op, emissive: col, emissiveIntensity: 0.7 } : {});
+  const skin = toon(mute(o.skin, 0.25), ghostOpts(o.skin, 0.55));
+  const cloth = toon(mute(o.cloth, 0.6), ghostOpts(o.cloth, 0.5));
+  const coatCol = mute(darker(o.cloth, 0.38), 0.35);
+  const coat = new THREE.MeshToonMaterial({
+    color: coatCol, gradientMap, side: THREE.DoubleSide,
+    transparent: Boolean(o.ghost), opacity: o.ghost ? 0.45 : 1,
+    emissive: o.ghost ? o.cloth : 0x000000, emissiveIntensity: o.ghost ? 0.6 : 1,
+  });
+  const trim = toon(o.cloth, { emissive: o.cloth, emissiveIntensity: 0.15 });
+  const leather = toon(0x3a2a20);
+  const armor = o.armor ? toon(mute(o.armor, 0.3)) : null;
+
+  // long thin legs with boots
+  if (!o.ghost) {
+    for (const sgn of [-1, 1]) {
+      g.add(part(G.capsule, o.bones ? skin : toon(mute(0x2a2228, 0.2)), { pos: [0.07 * B * sgn, 0.2 * H, 0], rot: [0, 0, -0.04 * sgn], scale: [0.045 * B, 0.15 * H, 0.045 * B] }));
+      g.add(part(G.box, leather, { pos: [0.075 * B * sgn, 0.035, 0.03], rot: [0, 0.1 * sgn, 0], scale: [0.09 * B, 0.07, 0.15] }));
+    }
+  }
+  // tattered long coat
+  const coatMesh = new THREE.Mesh(raggedCloak(seed, { top: 0.13 * B, bottom: 0.27 * B, height: 0.62 * H, open: o.armor ? 0.9 : 0.55 }), coat);
+  coatMesh.position.set(0, 0.36 * H, -0.01);
+  coatMesh.castShadow = true;
+  inked(coatMesh, 0.02);
+  g.add(coatMesh);
+  // narrow torso with a slight hunch
+  g.add(part(G.cyl, armor || cloth, { pos: [0, 0.6 * H, 0.01], rot: [0.08, 0, 0], scale: [0.12 * B, 0.3 * H, 0.1 * B] }));
+  if (armor) g.add(part(G.sphere, armor, { pos: [0, 0.72 * H, 0], scale: [0.19 * B, 0.06 * H, 0.12 * B] }));
+  // sash and scarf in the token colour
+  g.add(part(G.cyl, trim, { pos: [0, 0.47 * H, 0.005], rot: [0, 0, 0.12], scale: [0.13 * B, 0.03, 0.11 * B], ink: false }));
+  g.add(part(G.torus, trim, { pos: [0, 0.77 * H, 0], rot: [Math.PI / 2, 0, 0], scale: [0.1, 0.1, 0.4] }));
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.22, 0.015), trim);
+  tail.position.set(0.06, 0.66 * H, 0.09);
+  tail.rotation.set(0.2, 0, -0.25);
+  g.add(tail);
+  // long arms, slightly bent forward
+  for (const sgn of [-1, 1]) {
+    g.add(part(G.capsule, o.wraps ? toon(0xd8ccb4) : (armor || cloth), { pos: [0.19 * B * sgn, 0.55 * H, 0.03], rot: [-0.15, 0, 0.18 * sgn], scale: [0.04 * B, 0.17 * H, 0.04 * B] }));
+    g.add(part(G.sphere, skin, { pos: [0.23 * B * sgn, 0.37 * H, 0.07], scale: [0.035, 0.04, 0.035] }));
+  }
+  // small, angular head
+  const headY = 0.86 * H;
+  g.add(part(G.lowSphere, skin, { pos: [0, headY, 0.01], scale: [0.09, 0.11, 0.095] }));
+  if (o.snout) g.add(part(G.cone, skin, { pos: [0, headY - 0.02, 0.12], rot: [Math.PI / 2, 0, 0], scale: [0.06, 0.13, 0.05] }));
+  if (o.tusks) for (const sgn of [-1, 1]) g.add(part(G.cone, toon(0xe8dcc0), { pos: [0.04 * sgn, headY - 0.05, 0.09], scale: [0.013, 0.045, 0.013], ink: false }));
+  if (o.ears) for (const sgn of [-1, 1]) g.add(part(G.cone, skin, { pos: [0.1 * sgn, headY + 0.02, 0], rot: [0, 0, -1.25 * sgn], scale: [0.025, 0.11, 0.025] }));
+  if (o.horns) for (const sgn of [-1, 1]) g.add(part(G.cone, toon(o.horns), { pos: [0.06 * sgn, headY + 0.11, -0.02], rot: [-0.5, 0, -0.4 * sgn], scale: [0.025, 0.13, 0.025] }));
+  if (o.beard) g.add(part(G.cone, toon(mute(o.hair || 0x8a4a2a, 0.3)), { pos: [0, headY - 0.09, 0.06], rot: [Math.PI, 0, 0], scale: [0.09, 0.2, 0.06] }));
   if (o.hood) {
-    g.add(part(G.sphere, clothDark, { pos: [0, headY + 0.03, -0.02], scale: [0.16, 0.16, 0.16] }));
+    const hood = new THREE.Mesh(raggedCloak(seed + 7, { top: 0.02, bottom: 0.13, height: 0.24, open: 1.4, tear: 0.4 }), coat);
+    hood.position.set(0, headY + 0.03, -0.01);
+    hood.rotation.x = 0.1;
+    inked(hood, 0.015);
+    g.add(hood);
   } else if (o.hat) {
-    g.add(part(G.cyl, cloth, { pos: [0, headY + 0.1, 0], scale: [0.22, 0.02, 0.22] }));
-    g.add(part(G.cone, cloth, { pos: [0, headY + 0.27, -0.02], rot: [-0.25, 0, 0], scale: [0.12, 0.34, 0.12] }));
+    g.add(part(G.cyl, cloth, { pos: [0, headY + 0.08, 0], scale: [0.22, 0.02, 0.22] }));
+    g.add(part(G.cone, cloth, { pos: [0.03, headY + 0.27, -0.03], rot: [-0.3, 0, -0.25], scale: [0.11, 0.38, 0.11] }));
+  } else if (o.wideHat) {
+    g.add(wideHat(toon(mute(0x2a2026, 0.2)), trim, H, headY));
   } else if (!o.bones && !o.ghost) {
-    g.add(part(G.sphere, toon(o.hair || 0x3a2418), { pos: [0, headY + 0.05, -0.03], scale: [0.14, 0.11, 0.13] }));
+    // unkempt hair
+    const hair = toon(mute(o.hair || 0x3a2418, 0.2));
+    g.add(part(G.lowSphere, hair, { pos: [0, headY + 0.04, -0.02], scale: [0.1, 0.08, 0.1] }));
+    for (let k = 0; k < 4; k += 1) {
+      g.add(part(G.cone, hair, { pos: [(k - 1.5) * 0.04, headY + 0.07, -0.03], rot: [-0.6, 0, (k - 1.5) * 0.5], scale: [0.025, 0.09, 0.025], ink: false }));
+    }
   }
-  if (o.tail) g.add(part(G.capsule, skin, { pos: [0, 0.3 * H, -0.2], rot: [-1.0, 0, 0], scale: [0.025, 0.2, 0.025] }));
-  // eyes
-  const eyeCol = o.eyes || 0x1a1014;
-  const eyeMat = o.eyes ? toon(eyeCol, { emissive: eyeCol, emissiveIntensity: 3 }) : toon(eyeCol);
-  for (const s of [-1, 1]) g.add(part(G.sphere, eyeMat, { pos: [0.04 * s, headY + 0.01, 0.1], scale: [0.016, 0.02, 0.012], ink: false, shadow: false }));
+  if (o.tail) g.add(part(G.capsule, skin, { pos: [0, 0.3 * H, -0.2], rot: [-1.0, 0, 0], scale: [0.02, 0.2, 0.02] }));
+  // eyes: dark slits, or glowing for creatures
+  const eyeCol = o.eyes || 0x0e0a0c;
+  const eyeMat = o.eyes ? toon(eyeCol, { emissive: eyeCol, emissiveIntensity: 3.5 }) : toon(eyeCol);
+  for (const sgn of [-1, 1]) g.add(part(G.sphere, eyeMat, { pos: [0.033 * sgn, headY + 0.01, 0.085], scale: [0.016, 0.009, 0.01], ink: false, shadow: false }));
   return { group: g, height: H };
 }
 
@@ -578,8 +678,10 @@ function heroModel(c) {
     armor: look.armor,
     hood: look.hood,
     hat: look.hat,
+    wideHat: look.wideHat,
     wraps: look.wraps,
     hair: hairs[h % hairs.length],
+    seed: (h % 997) / 997,
   });
   addProp(m.group, look.prop, { ...race, bulk: race.bulk, glow: look.glow }, race.height);
   if (look.shield) {
@@ -753,6 +855,145 @@ export function createTable(container, hooks) {
 
   const toWorld = (x, y, size = 1) => new THREE.Vector3(x + size / 2 - state.cols / 2, 0, y + size / 2 - state.rows / 2);
 
+  // ---- imported models (public/models/manifest.json) ----
+  // Each entry: { id, file, title, use: ['class:bard', 'monster:zombie|ghoul',
+  // 'type:undead', 'prop:water'], height, tint, glow, hover, rotate }.
+  const library = { entries: [], ready: new Map(), version: 0 };
+  const gltfLoader = new GLTFLoader();
+
+  function prepareModel(entry, gltf) {
+    const sceneRoot = gltf.scene;
+    sceneRoot.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(sceneRoot);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const height = entry.height || 1.15;
+    const scale = height / Math.max(1e-6, entry.prop ? Math.max(size.x, size.y, size.z) : size.y);
+    const tint = new THREE.Color(entry.tint || '#9a9088').getHex();
+    const glow = entry.glow ? new THREE.Color(entry.glow).getHex() : 0x000000;
+    sceneRoot.traverse((o) => {
+      if (!o.isMesh) return;
+      if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+      const old = Array.isArray(o.material) ? o.material[0] : o.material;
+      const map = old && old.map ? old.map : null;
+      o.material = new THREE.MeshToonMaterial({
+        color: map ? 0xffffff : tint,
+        map,
+        gradientMap,
+        emissive: glow,
+        emissiveIntensity: entry.glow ? 0.35 : 1,
+        side: old && old.side === THREE.DoubleSide ? THREE.DoubleSide : THREE.FrontSide,
+      });
+      o.castShadow = true;
+      o.receiveShadow = true;
+      if (!o.isSkinnedMesh) {
+        const ink = new THREE.Mesh(o.geometry, inkExtrude(0.012 / scale));
+        ink.userData.outline = true;
+        ink.raycast = () => {};
+        o.add(ink);
+      }
+    });
+    return {
+      scene: sceneRoot,
+      animations: gltf.animations || [],
+      scale,
+      offset: new THREE.Vector3(-center.x * scale, -box.min.y * scale, -center.z * scale),
+      height,
+    };
+  }
+
+  function loadLibrary() {
+    fetch('models/manifest.json').then((r) => (r.ok ? r.json() : null)).then((manifest) => {
+      if (!manifest || !Array.isArray(manifest.models)) return;
+      library.entries = manifest.models.filter((m) => m && m.id && m.file);
+      for (const entry of library.entries) {
+        gltfLoader.load(`models/${entry.file}`, (gltf) => {
+          if (state.disposed) return;
+          library.ready.set(entry.id, prepareModel(entry, gltf));
+          library.version += 1;
+          if (state.view) {
+            placeProps();
+            syncTokens(state.view);
+          }
+        }, undefined, () => { /* file not added yet: keep the built-in figures */ });
+      }
+    }).catch(() => {});
+  }
+
+  function libraryFor(token, char) {
+    const name = `${token.monsterId || ''} ${token.label || ''}`.toLowerCase();
+    for (const entry of library.entries) {
+      if (!library.ready.has(entry.id)) continue;
+      for (const rule of entry.use || []) {
+        const [kind, value = ''] = String(rule).split(':');
+        if (kind === 'class' && char && char.clsId === value) return entry;
+        if (kind === 'monster' && !char && value && new RegExp(value, 'i').test(name)) return entry;
+        if (kind === 'type' && !char && token.icon === value) return entry;
+      }
+    }
+    return null;
+  }
+
+  function instantiate(entry) {
+    const src = library.ready.get(entry.id);
+    const obj = cloneSkinned(src.scene);
+    obj.scale.setScalar(src.scale);
+    obj.position.copy(src.offset);
+    const turn = new THREE.Group();
+    turn.rotation.y = entry.rotate || 0;
+    turn.add(obj);
+    const group = new THREE.Group();
+    group.add(turn);
+    if (entry.hover) {
+      turn.position.y = entry.hover;
+      turn.userData.hover = entry.hover;
+    }
+    let mixer = null;
+    const clips = {};
+    if (src.animations.length) {
+      mixer = new THREE.AnimationMixer(obj);
+      const find = (re) => src.animations.find((a) => re.test(a.name));
+      const idle = find(/idle|stand|breath/i) || src.animations[0];
+      const walk = find(/walk|run|move/i);
+      clips.idle = mixer.clipAction(idle);
+      if (walk) clips.walk = mixer.clipAction(walk);
+      clips.idle.play();
+    }
+    return { group, height: src.height + (entry.hover || 0), mixer, clips, imported: true };
+  }
+
+  // Set pieces such as a ship on the water.
+  const propsGroup = new THREE.Group();
+  scene.add(propsGroup);
+  function placeProps() {
+    clearGroup(propsGroup);
+    for (const entry of library.entries) {
+      if (!library.ready.has(entry.id)) continue;
+      const rule = (entry.use || []).find((u) => String(u).startsWith('prop:'));
+      if (!rule) continue;
+      const where = rule.split(':')[1];
+      const cells = where === 'water' ? state.waterCells : state.floorCells;
+      if (!cells || !cells.length) continue;
+      // the wet (or open) cell with the most neighbours of the same kind
+      const set = new Set(cells.map((c) => `${c.x},${c.y}`));
+      let best = cells[0];
+      let bestN = -1;
+      for (const c of cells) {
+        let n = 0;
+        for (let dx = -2; dx <= 2; dx += 1) for (let dy = -2; dy <= 2; dy += 1) if (set.has(`${c.x + dx},${c.y + dy}`)) n += 1;
+        if (n > bestN) { bestN = n; best = c; }
+      }
+      const inst = instantiate({ ...entry, hover: 0 });
+      const p = toWorld(best.x, best.y);
+      inst.group.position.set(p.x, where === 'water' ? -0.05 : 0, p.z);
+      inst.group.scale.setScalar(entry.propScale || 1.6);
+      inst.group.rotation.y = Math.random() * Math.PI * 2;
+      inst.group.userData.bob = where === 'water';
+      inst.group.userData.mixer = inst.mixer;
+      propsGroup.add(inst.group);
+    }
+  }
+
   // ---- quality ----
   function setQuality(q) {
     state.quality = q === 'low' ? 'low' : 'high';
@@ -852,6 +1093,8 @@ export function createTable(container, hooks) {
     world.add(trim);
 
     state.water = null;
+    state.waterCells = [];
+    state.floorCells = [];
     if (!map.tiles) {
       addAccents(map, mood, []);
       addMotes(map, mood);
@@ -1008,8 +1251,11 @@ export function createTable(container, hooks) {
       }
     }
 
+    state.waterCells = water;
+    state.floorCells = floorCells;
     addAccents(map, mood, floorCells, walls, rnd);
     addMotes(map, mood);
+    placeProps();
   }
 
   // Braziers, candles, crystals, fireflies or chem lamps — each with light.
@@ -1139,6 +1385,8 @@ export function createTable(container, hooks) {
   }
 
   function buildModel(token, char) {
+    const entry = libraryFor(token, char);
+    if (entry) return instantiate(entry);
     if (char) return heroModel(char);
     return monsterModel(token);
   }
@@ -1167,6 +1415,18 @@ export function createTable(container, hooks) {
     const baseColor = new THREE.Color(char ? char.color : token.color || '#7b241c').getHex();
     const base = part(G.disc, toon(baseColor, { emissive: baseColor, emissiveIntensity: 0.12 }), { pos: [0, 0.03, 0], scale: [0.42 * token.size, 0.06, 0.42 * token.size] });
     root.add(base);
+    const rnd = rngFrom(Math.floor(Math.random() * 1e6));
+    const debris = toon(0x4a3a2e);
+    const stone = toon(0x6a625a);
+    for (let k = 0; k < 4; k += 1) {
+      const a = rnd() * Math.PI * 2;
+      const r = (0.24 + rnd() * 0.12) * token.size;
+      if (rnd() < 0.55) {
+        root.add(part(G.box, debris, { pos: [Math.cos(a) * r, 0.08, Math.sin(a) * r], rot: [rnd() * 0.5, rnd() * 3, rnd() * 0.4], scale: [0.2 * token.size, 0.03, 0.05] }));
+      } else {
+        root.add(part(G.lowSphere, stone, { pos: [Math.cos(a) * r, 0.07, Math.sin(a) * r], scale: [0.045, 0.035, 0.05] }));
+      }
+    }
 
     // invisible hit box for picking
     const hit = new THREE.Mesh(new THREE.CylinderGeometry(0.45 * token.size, 0.45 * token.size, Math.max(1, model.height * scale) + 0.2, 10), new THREE.MeshBasicMaterial({ visible: false }));
@@ -1184,6 +1444,7 @@ export function createTable(container, hooks) {
 
     const entry = {
       id: token.id, root, pivot, model: model.group, height: model.height * scale, hit, selRing, turnRing, hoverRing,
+      mixer: model.mixer || null, clips: model.clips || {}, imported: Boolean(model.imported), walking: false,
       modelKey: null, pos: new THREE.Vector3(), from: null, to: null, t: 1, dur: 0, facing: 0, lunge: null,
       flash: 0, tilt: 0, tiltTarget: 0, opacity: 1, seed: Math.random() * 10,
     };
@@ -1195,7 +1456,8 @@ export function createTable(container, hooks) {
   }
 
   function modelKeyFor(token, char) {
-    return char ? `${char.raceId}|${char.clsId}|${char.color}|${char.icon}|${token.size}` : `${token.monsterId}|${token.icon}|${token.label}|${token.color}|${token.size}`;
+    const lib = (libraryFor(token, char) || {}).id || '';
+    return char ? `${char.raceId}|${char.clsId}|${char.color}|${char.icon}|${token.size}|${lib}` : `${token.monsterId}|${token.icon}|${token.label}|${token.color}|${token.size}|${lib}`;
   }
 
   function syncTokens(view) {
@@ -1646,12 +1908,25 @@ export function createTable(container, hooks) {
           e.model.position.set(0, 0, 0);
         }
       }
+      if (e.mixer) {
+        const moving = Boolean(e.to);
+        if (e.clips.walk && moving !== e.walking) {
+          e.walking = moving;
+          const [from, to] = moving ? [e.clips.idle, e.clips.walk] : [e.clips.walk, e.clips.idle];
+          to.reset().play();
+          from.crossFadeTo(to, 0.2, false);
+        }
+        e.mixer.update(dt);
+      }
+      e.model.traverse((o) => {
+        if (o.userData.hover) o.position.y = o.userData.hover + Math.sin(time * 1.6 + e.seed) * 0.08;
+      });
       // facing
       const diff = ((e.facing - root.rotation.y + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
       root.rotation.y += diff * Math.min(1, dt * 8);
       // breathing / idle
       const alive = e.tiltTarget === 0;
-      e.model.scale.y = e.model.scale.x * (1 + (alive ? Math.sin(time * 2.2 + e.seed) * 0.02 : 0));
+      if (!e.mixer) e.model.scale.y = e.model.scale.x * (1 + (alive ? Math.sin(time * 2.2 + e.seed) * 0.02 : 0));
       // down / dead topple
       e.tilt += (e.tiltTarget - e.tilt) * Math.min(1, dt * 5);
       e.pivot.rotation.z = -e.tilt * Math.PI / 2 * 0.95;
@@ -1717,6 +1992,13 @@ export function createTable(container, hooks) {
       state.motes.geometry.attributes.position.needsUpdate = true;
     }
     if (state.water) state.water.uniforms.time.value = time;
+    for (const prop of propsGroup.children) {
+      if (prop.userData.bob) {
+        prop.position.y = -0.05 + Math.sin(time * 0.9) * 0.05;
+        prop.rotation.z = Math.sin(time * 0.7) * 0.03;
+      }
+      if (prop.userData.mixer) prop.userData.mixer.update(dt);
+    }
 
     // effects
     state.effects = state.effects.filter((f) => f(dt));
@@ -1735,6 +2017,7 @@ export function createTable(container, hooks) {
   }
 
   setQuality('high');
+  loadLibrary();
   animate();
 
   function dispose() {

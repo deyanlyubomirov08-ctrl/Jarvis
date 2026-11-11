@@ -1,0 +1,50 @@
+{
+  "models": [
+    {
+      "id": "phantom-fiddler",
+      "title": "The Phantom Fiddler",
+      "file": "phantom-fiddler.glb",
+      "use": ["class:bard", "monster:specter|ghost|banshee|wraith"],
+      "height": 1.2,
+      "tint": "#8f9aa0",
+      "glow": "#3fd6ff"
+    },
+    {
+      "id": "veil-of-daggers",
+      "title": "Veil of Daggers",
+      "file": "veil-of-daggers.glb",
+      "use": ["class:rogue", "monster:assassin|spy|cult-fanatic|cultist|hag"],
+      "height": 1.2,
+      "tint": "#a29a96"
+    },
+    {
+      "id": "ragged-harvester",
+      "title": "Ragged Harvester",
+      "file": "ragged-harvester.glb",
+      "use": ["monster:zombie|ghoul|ghast|wight|mummy|scarecrow|skeleton", "type:undead"],
+      "height": 1.35,
+      "tint": "#8a7a62",
+      "glow": "#c6ff3d"
+    },
+    {
+      "id": "manta-dreamscape",
+      "title": "Manta Dreamscape",
+      "file": "manta-dreamscape.glb",
+      "use": ["monster:manta|ray|stirge|bat|harpy|eagle|hawk|owl|darkmantle"],
+      "height": 0.55,
+      "hover": 0.55,
+      "tint": "#5a6aa8",
+      "glow": "#2fe6d6"
+    },
+    {
+      "id": "ancient-sea-chariot",
+      "title": "Ancient Sea Chariot",
+      "file": "ancient-sea-chariot.glb",
+      "use": ["prop:water"],
+      "height": 1,
+      "prop": true,
+      "propScale": 2.4,
+      "tint": "#9a7a4a"
+    }
+  ]
+}
