@@ -88,6 +88,13 @@
     try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(all)); } catch { /* storage unavailable */ }
   }
 
+  function readPref(key, fallback) {
+    try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
+  }
+  function writePref(key, value) {
+    try { localStorage.setItem(key, value); } catch { /* storage unavailable */ }
+  }
+
   // ---------- App state ----------
 
   const app = {
@@ -106,6 +113,9 @@
     libKind: 'monsters',
     mapKey: null,
     lastCurrent: null,
+    table: null,      // 3D scene, when active
+    want3d: readPref('dnd.view3d', '1') === '1',
+    quality: readPref('dnd.quality', 'high'),
   };
 
   const socket = io({ transports: ['websocket', 'polling'] });
@@ -138,6 +148,12 @@
   function showLobby() {
     app.code = null;
     app.view = null;
+    if (app.table) {
+      app.table.dispose();
+      app.table = null;
+      $('#table3d').classList.add('hidden');
+      $('#map-viewport').classList.remove('hidden');
+    }
     $('#game').classList.add('hidden');
     $('#lobby').classList.remove('hidden');
     history.replaceState(null, '', location.pathname);
@@ -147,6 +163,8 @@
   function showGame() {
     $('#lobby').classList.add('hidden');
     $('#game').classList.remove('hidden');
+    if (app.want3d && !app.table) enable3d();
+    else if (!app.table) $('#quality').classList.add('hidden');
   }
 
   function renderRecent() {
@@ -237,6 +255,10 @@
     renderLog();
   });
 
+  socket.on('fx', (e) => {
+    if (app.table) app.table.fx(e);
+  });
+
   socket.on('message', (msg) => {
     app.log.push(msg);
     if (app.log.length > 300) app.log.shift();
@@ -279,7 +301,12 @@
     $('#controller-name').textContent = isAI() ? `домакина (${host ? host.name : '—'})` : 'водещия';
 
     renderPlayers();
-    renderMap();
+    if (app.table) {
+      app.table.update(v);
+      renderTurnBanner();
+    } else {
+      renderMap();
+    }
     renderChars();
     renderInit();
     renderSession();
@@ -392,8 +419,7 @@
     board.classList.toggle('targeting', Boolean(app.targeting));
     $('#zoom-label').textContent = `${Math.round(app.zoom * 100)}%`;
 
-    const e = currentEntry();
-    $('#turn-banner').textContent = e ? `Рунд ${v.initiative.round} · на ход: ${e.name}` : '';
+    renderTurnBanner();
 
     const current = currentTokenId();
     const existing = new Map($$('.token', board).map((el) => [el.dataset.id, el]));
@@ -450,6 +476,83 @@
     app.lastCurrent = current;
   }
 
+  function renderTurnBanner() {
+    const v = app.view;
+    const e = currentEntry();
+    $('#turn-banner').textContent = e ? `Рунд ${v.initiative.round} · на ход: ${e.name}` : '';
+  }
+
+  // ----- 3D table -----
+
+  const tableHooks = {
+    canMove: (t) => canMoveToken(t),
+    selectedId: () => app.selectedToken,
+    onSelect: (id) => {
+      app.selectedToken = id && app.selectedToken !== id ? id : null;
+      render();
+    },
+    onTarget: (id) => useTarget(id),
+    onMove: async (id, x, y) => (await emit('token:move', { id, x, y })).ok,
+  };
+
+  let scenePromise = null;
+  async function enable3d() {
+    if (app.table) return true;
+    try {
+      scenePromise = scenePromise || import('./scene3d.js');
+      const mod = await scenePromise;
+      if (!mod.webglSupported()) throw new Error('WebGL2 is not available');
+      app.table = mod.createTable($('#table3d'), tableHooks);
+      app.table.setQuality(app.quality);
+      if (/[?&]debug3d\b/.test(location.search)) window.tavern = app;
+      $('#table3d').classList.remove('hidden');
+      $('#map-viewport').classList.add('hidden');
+      $('#view-toggle').textContent = '🗺 2D';
+      $('#quality').classList.remove('hidden');
+      if (app.view) render();
+      return true;
+    } catch (err) {
+      console.warn('3D изгледът не е наличен:', err);
+      toast('3D изгледът не се поддържа на това устройство — използвам 2D', true);
+      disable3d();
+      return false;
+    }
+  }
+
+  function disable3d() {
+    if (app.table) {
+      app.table.dispose();
+      app.table = null;
+    }
+    $('#table3d').classList.add('hidden');
+    $('#map-viewport').classList.remove('hidden');
+    $('#view-toggle').textContent = '🧊 3D';
+    $('#quality').classList.add('hidden');
+    app.mapKey = null;
+    $('#map-board').replaceChildren();
+    if (app.view) render();
+  }
+
+  $('#view-toggle').addEventListener('click', async () => {
+    if (app.table) {
+      app.want3d = false;
+      disable3d();
+    } else {
+      app.want3d = await enable3d();
+    }
+    writePref('dnd.view3d', app.want3d ? '1' : '0');
+  });
+  $('#quality').value = app.quality;
+  $('#quality').addEventListener('change', (e) => {
+    app.quality = e.target.value;
+    writePref('dnd.quality', app.quality);
+    if (app.table) app.table.setQuality(app.quality);
+  });
+  $('#recenter').addEventListener('click', () => {
+    if (app.table) app.table.frame();
+    else $('#map-viewport').scrollTo({ left: 0, top: 0, behavior: 'smooth' });
+  });
+
   function canMoveToken(t) {
     const v = app.view;
     return v.isDM || (t.ownerId && t.ownerId === v.me);
@@ -499,6 +602,10 @@
   }
 
   $$('[data-zoom]').forEach((b) => b.addEventListener('click', () => {
+    if (app.table) {
+      app.table.zoom(Number(b.dataset.zoom));
+      return;
+    }
     const steps = [0.4, 0.5, 0.66, 0.8, 1, 1.25, 1.5, 2];
     const idx = steps.findIndex((z) => z >= app.zoom - 0.001);
     const next = Math.max(0, Math.min(steps.length - 1, idx + Number(b.dataset.zoom)));
@@ -542,15 +649,17 @@
     const hint = $('#target-hint');
     hint.textContent = t.type === 'attack' ? '🎯 Кликни върху враг на картата (Esc — отказ)' : '✨ Кликни върху съюзник на картата (Esc — отказ)';
     hint.classList.remove('hidden');
-    renderMap();
+    if (app.table) app.table.setTargeting(true);
+    else renderMap();
     renderInit();
   }
 
   function disarm() {
     app.targeting = null;
     $('#target-hint').classList.add('hidden');
+    if (app.table) app.table.setTargeting(false);
     if (app.view) {
-      renderMap();
+      if (!app.table) renderMap();
       renderInit();
     }
   }

@@ -5,7 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Таверната — онлайн D&amp;D</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎲</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Cormorant+Garamond:ital,wght@0,500;0,700;1,500&family=Inter:wght@400;500;600&display=swap">
   <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    { "imports": { "three": "/vendor/three/build/three.module.js", "three/addons/": "/vendor/three/addons/" } }
+  </script>
 </head>
 <body>
   <!-- Lobby -->
@@ -77,11 +83,20 @@
           <button data-zoom="-1" title="Отдалечи">−</button>
           <span id="zoom-label">100%</span>
           <button data-zoom="1" title="Приближи">+</button>
+          <button id="view-toggle" class="chip" title="Превключи между 3D и 2D">🧊 3D</button>
+          <select id="quality" title="Качество на графиката">
+            <option value="high">Високо качество</option>
+            <option value="low">Бърз режим</option>
+          </select>
+          <button id="recenter" class="chip" title="Покажи цялата карта">⟲</button>
           <span id="turn-banner" class="turn-banner"></span>
           <span id="target-hint" class="target-hint hidden"></span>
         </div>
         <div id="map-viewport" class="map-viewport">
           <div id="map-board" class="map-board"></div>
+        </div>
+        <div id="table3d" class="table3d hidden">
+          <div class="table3d-help">Ляв бутон — завърти · Десен — премести · Колелце — приближи · Влачи фигурката си, за да вървиш</div>
         </div>
       </section>
 

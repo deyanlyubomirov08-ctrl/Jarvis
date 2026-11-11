@@ -61,6 +61,10 @@ function saveNow() {
 const app = express();
 app.disable('x-powered-by');
 app.use(express.static(path.join(__dirname, '..', 'public')));
+// three.js for the 3D table, served from the installed package.
+const THREE_DIR = path.join(path.dirname(require.resolve('three')), '..');
+app.use('/vendor/three/build', express.static(path.join(THREE_DIR, 'build'), { maxAge: '7d' }));
+app.use('/vendor/three/addons', express.static(path.join(THREE_DIR, 'examples', 'jsm'), { maxAge: '7d' }));
 app.get('/healthz', (_req, res) => res.json({ ok: true, rooms: store.rooms.size }));
 
 const catalogJson = JSON.stringify(lib.catalog());
@@ -131,6 +135,10 @@ function postRoll(room, player, expr, { label = '', isPrivate = false } = {}) {
 // Posts entries produced by combat / aidm ({type: 'roll'|'narration'}).
 function postEntries(room, entries, author = null) {
   for (const e of entries) {
+    if (e.type === 'fx') {
+      io.to(room.code).emit('fx', e.fx);
+      continue;
+    }
     const msg = e.type === 'roll'
       ? store.addMessage(room, {
         type: 'roll',
@@ -170,8 +178,9 @@ function scheduleAutomation(room) {
     if (!live) return;
     try {
       const { messages, more } = aidm.step(live, Math.random);
-      postEntries(live, messages);
+      // positions first, so attack animations start where the monster ended up
       await broadcastState(live);
+      postEntries(live, messages);
       if (more) scheduleAutomation(live);
     } catch (err) {
       console.error('Грешка в автоматичния ход:', err);
@@ -460,7 +469,7 @@ io.on('connection', (socket) => {
     }
     if (!combat.inRange(attacker, target, weapon)) throw new GameError('Целта е извън обхват — приближи се');
     const defender = combat.combatant(room, target);
-    const { messages } = combat.resolveAttack(room, c.name, weapon, defender, Math.random);
+    const { messages } = combat.resolveAttack(room, c.name, weapon, defender, Math.random, attacker);
     postEntries(room, messages, player);
     if (inCombat) init.acted = true;
     postEntries(room, aidm.checkOutcome(room));
@@ -491,7 +500,7 @@ io.on('connection', (socket) => {
       if (init[flag]) throw new GameError(feature.bonus ? 'Вече използва бонус действие този ход' : 'Вече използва действието си този ход');
     }
     feature.uses -= 1;
-    postEntries(room, combat.useHeal(feature, c.name, combat.combatant(room, targetToken), Math.random), player);
+    postEntries(room, combat.useHeal(feature, c.name, combat.combatant(room, targetToken), Math.random, me), player);
     if (inCombat) init[flag] = true;
     store.touch(room);
   });

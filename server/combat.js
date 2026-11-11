@@ -76,7 +76,9 @@ function heal(target, amount) {
 const doubleDice = (expr) => expr.replace(/(\d*)d(\d+)/g, (_, n, s) => `${(Number(n) || 1) * 2}d${s}`);
 
 // attack: { name, attackBonus?, damage, damageType, save?, dc?, range?, ranged?, reach? }
-function resolveAttack(room, attackerName, attack, target, rng) {
+// `fromToken` (optional) lets the client animate the exchange: an
+// { type: 'fx' } entry is added first in the returned messages.
+function resolveAttack(room, attackerName, attack, target, rng, fromToken = null) {
   const die = rngDie(rng);
   const out = [];
   if (!attack.damage) {
@@ -116,11 +118,26 @@ function resolveAttack(room, attackerName, attack, target, rng) {
   } else if (attack.save) {
     out.push({ type: 'narration', text: `${target.name} избягва ${attack.name}.` });
   }
+  out.unshift({
+    type: 'fx',
+    fx: {
+      kind: 'attack',
+      from: fromToken ? fromToken.id : null,
+      to: target.token.id,
+      hit,
+      crit,
+      damage,
+      ranged: Boolean(attack.ranged || attack.save),
+      spell: Boolean(attack.spell || attack.save),
+      element: attack.damageType || null,
+      down: target.kind === 'pc' ? target.character.hp <= 0 : Boolean(target.token.dead),
+    },
+  });
   return { messages: out, hit, damage };
 }
 
 // Area save attack (e.g. breath weapon): half damage on a successful save.
-function resolveAreaSave(room, attackerName, attack, targets, rng) {
+function resolveAreaSave(room, attackerName, attack, targets, rng, fromToken = null) {
   const die = rngDie(rng);
   const out = [];
   const dmg = roll(attack.damage, die);
@@ -134,11 +151,21 @@ function resolveAreaSave(room, attackerName, attack, targets, rng) {
     const note = applyDamage(t, amount);
     if (note) out.push({ type: 'narration', text: note });
   }
+  out.unshift({
+    type: 'fx',
+    fx: {
+      kind: 'area',
+      from: fromToken ? fromToken.id : null,
+      targets: targets.map((t) => t.token.id),
+      damage: dmg.total,
+      element: attack.damageType || (/fire/i.test(attack.name) ? 'Fire' : null),
+    },
+  });
   return { messages: out };
 }
 
 // Healing feature: returns chat entries; the caller checks uses and range.
-function useHeal(feature, healerName, target, rng) {
+function useHeal(feature, healerName, target, rng, fromToken = null) {
   const die = rngDie(rng);
   const r = roll(feature.dice, die);
   const amount = Math.max(1, r.total);
@@ -146,6 +173,7 @@ function useHeal(feature, healerName, target, rng) {
   heal(target, amount);
   const out = [{ type: 'roll', label: `${healerName}: ${feature.name} → ${target.name} (+${amount} HP)`, result: { ...r, total: amount } }];
   if (wasDown) out.push({ type: 'narration', text: `${target.name} отваря очи и се изправя отново!` });
+  out.unshift({ type: 'fx', fx: { kind: 'heal', from: fromToken ? fromToken.id : null, to: target.token.id, amount } });
   return out;
 }
 

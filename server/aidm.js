@@ -395,7 +395,7 @@ function monsterTurn(room, token, rng) {
       const primary = near.reduce((a, b) => (combat.distance(token, a.token) <= combat.distance(token, b.token) ? a : b));
       const hit = targets.filter((t) => combat.distance(primary.token, t.token) <= 1);
       token.usedArea = true;
-      out.push(...combat.resolveAreaSave(room, token.label, acts.area[0], hit, rng).messages);
+      out.push(...combat.resolveAreaSave(room, token.label, acts.area[0], hit, rng, token).messages);
       return out;
     }
   }
@@ -418,7 +418,7 @@ function monsterTurn(room, token, rng) {
       const inReach = targets.filter((t) => combat.distance(token, t.token) <= reachOf(a));
       if (!inReach.length) break;
       const target = inReach.reduce((x, y) => (x.hp <= y.hp ? x : y));
-      out.push(...combat.resolveAttack(room, token.label, a, target, rng).messages);
+      out.push(...combat.resolveAttack(room, token.label, a, target, rng, token).messages);
     }
   };
   const rangedShot = () => {
@@ -426,7 +426,7 @@ function monsterTurn(room, token, rng) {
     const inRange = targets.filter((t) => combat.distance(token, t.token) * 5 <= (a.range || 30));
     if (!inRange.length) return false;
     const target = inRange.reduce((x, y) => (combat.distance(token, x.token) <= combat.distance(token, y.token) ? x : y));
-    out.push(...combat.resolveAttack(room, token.label, a, target, rng).messages);
+    out.push(...combat.resolveAttack(room, token.label, a, target, rng, token).messages);
     return true;
   };
 
