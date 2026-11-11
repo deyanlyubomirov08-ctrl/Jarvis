@@ -871,8 +871,12 @@ export function createTable(container, hooks) {
     const scale = height / Math.max(1e-6, entry.prop ? Math.max(size.x, size.y, size.z) : size.y);
     const tint = new THREE.Color(entry.tint || '#9a9088').getHex();
     const glow = entry.glow ? new THREE.Color(entry.glow).getHex() : 0x000000;
+    const meshes = [];
     sceneRoot.traverse((o) => {
-      if (!o.isMesh) return;
+      if (o.isMesh) meshes.push(o);
+    });
+    // collect first: the outlines added below are meshes too
+    meshes.forEach((o) => {
       if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
       const old = Array.isArray(o.material) ? o.material[0] : o.material;
       const map = old && old.map ? old.map : null;
@@ -909,7 +913,12 @@ export function createTable(container, hooks) {
       for (const entry of library.entries) {
         gltfLoader.load(`models/${entry.file}`, (gltf) => {
           if (state.disposed) return;
-          library.ready.set(entry.id, prepareModel(entry, gltf));
+          try {
+            library.ready.set(entry.id, prepareModel(entry, gltf));
+          } catch (err) {
+            console.warn(`Моделът ${entry.file} не може да се подготви:`, err);
+            return;
+          }
           library.version += 1;
           if (state.view) {
             placeProps();
@@ -1859,13 +1868,14 @@ export function createTable(container, hooks) {
     if (state.disposed) return;
     requestAnimationFrame(animate);
     if (document.hidden) return;
-    const dt = Math.min(0.05, state.clock.getDelta());
+    const realDt = Math.min(0.5, state.clock.getDelta());
+    const dt = Math.min(0.05, realDt);
     const time = state.clock.elapsedTime;
 
     if (state.zoomTo) {
       const v = camera.position.clone().sub(controls.target);
       const len = v.length();
-      const next = len + (state.zoomTo - len) * Math.min(1, dt * 3);
+      const next = len + (state.zoomTo - len) * Math.min(1, realDt * 3);
       camera.position.copy(controls.target).add(v.setLength(next));
       if (Math.abs(next - state.zoomTo) < 0.1) state.zoomTo = null;
     }
@@ -1873,7 +1883,7 @@ export function createTable(container, hooks) {
       const delta = state.focusTarget.clone().sub(controls.target);
       if (delta.length() < 0.05) state.focusTarget = null;
       else {
-        const step = delta.multiplyScalar(Math.min(1, dt * 3.5));
+        const step = delta.multiplyScalar(Math.min(1, realDt * 3.5));
         controls.target.add(step);
         camera.position.add(step);
       }
