@@ -20,3 +20,10 @@
 цвета, ако е без текстура (`tint`), и сиянието (`glow`). Правила в `use`:
 `class:<клас>` (напр. `class:bard`), `monster:<част от име>` (напр. `monster:zombie|ghoul`),
 `type:<вид>` (напр. `type:undead`) и `prop:water` за декор във водата.
+
+## Готови безплатни модели (KayKit, CC0)
+
+Файловете `kaykit-*.glb` са от пакетите KayKit Adventurers и KayKit Skeletons на Kay Lousberg
+(https://kaylousberg.com), лиценз CC0 — свободни за всякаква употреба. Всеки има анимации
+`idle`, `walk`, `attack`, `hit`, `death` (и `cast` за магьосниците), които играта пуска в битка.
+Пресъздават се със `scripts/blender/prepare_kaykit.py`.

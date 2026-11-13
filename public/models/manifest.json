@@ -67,6 +67,107 @@
       "prop": true,
       "propScale": 2.4,
       "tint": "#9a7a4a"
+    },
+    {
+      "id": "kaykit-knight",
+      "title": "Knight — KayKit by Kay Lousberg (CC0)",
+      "file": "kaykit-knight.glb",
+      "height": 1.15,
+      "use": [
+        "class:fighter",
+        "class:paladin",
+        "class:cleric",
+        "monster:knight|guard|veteran|gladiator"
+      ]
+    },
+    {
+      "id": "kaykit-barbarian",
+      "title": "Barbarian — KayKit by Kay Lousberg (CC0)",
+      "file": "kaykit-barbarian.glb",
+      "height": 1.15,
+      "use": [
+        "class:barbarian",
+        "monster:berserker|thug"
+      ]
+    },
+    {
+      "id": "kaykit-mage",
+      "title": "Mage — KayKit by Kay Lousberg (CC0)",
+      "file": "kaykit-mage.glb",
+      "height": 1.15,
+      "use": [
+        "class:wizard",
+        "class:sorcerer",
+        "class:druid",
+        "monster:mage|archmage|priest|acolyte|druid"
+      ]
+    },
+    {
+      "id": "kaykit-warlock",
+      "title": "Mage with tome — KayKit by Kay Lousberg (CC0)",
+      "file": "kaykit-warlock.glb",
+      "height": 1.15,
+      "use": [
+        "class:warlock",
+        "monster:cultist|fanatic"
+      ]
+    },
+    {
+      "id": "kaykit-rogue",
+      "title": "Hooded rogue — KayKit by Kay Lousberg (CC0)",
+      "file": "kaykit-rogue.glb",
+      "height": 1.1,
+      "use": [
+        "class:rogue",
+        "class:monk",
+        "class:bard",
+        "monster:bandit|spy|assassin|scout"
+      ]
+    },
+    {
+      "id": "kaykit-ranger",
+      "title": "Rogue with crossbow — KayKit by Kay Lousberg (CC0)",
+      "file": "kaykit-ranger.glb",
+      "height": 1.1,
+      "use": [
+        "class:ranger"
+      ]
+    },
+    {
+      "id": "kaykit-skeleton-warrior",
+      "title": "Skeleton warrior — KayKit by Kay Lousberg (CC0)",
+      "file": "kaykit-skeleton-warrior.glb",
+      "height": 1.1,
+      "use": [
+        "monster:skeleton|warrior"
+      ]
+    },
+    {
+      "id": "kaykit-skeleton-minion",
+      "title": "Skeleton minion — KayKit by Kay Lousberg (CC0)",
+      "file": "kaykit-skeleton-minion.glb",
+      "height": 1.05,
+      "use": [
+        "monster:zombie|ghoul|ghast|minion"
+      ]
+    },
+    {
+      "id": "kaykit-skeleton-mage",
+      "title": "Skeleton mage — KayKit by Kay Lousberg (CC0)",
+      "file": "kaykit-skeleton-mage.glb",
+      "height": 1.1,
+      "use": [
+        "monster:lich|wight|mummy|necromancer"
+      ]
+    },
+    {
+      "id": "kaykit-skeleton-rogue",
+      "title": "Skeleton rogue — KayKit by Kay Lousberg (CC0)",
+      "file": "kaykit-skeleton-rogue.glb",
+      "height": 1.1,
+      "use": [
+        "monster:specter|ghost|wraith|shadow|banshee"
+      ]
     }
   ]
 }

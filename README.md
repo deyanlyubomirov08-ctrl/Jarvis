@@ -112,5 +112,6 @@ test/            – тестове (node --test)
 
 - Игровото съдържание (чудовища, предмети, заклинания, раси, класове) е от **System Reference Document 5.1** на Wizards of the Coast, под [OGL 1.0a](https://media.wizards.com/2016/downloads/DND/SRD-OGL_V5.1.pdf) / [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/). Данните са от проекта [5e-bits/5e-database](https://github.com/5e-bits/5e-database) (MIT).
 - Изображенията на чудовищата и магическите предмети се зареждат от публичния [D&D 5e API](https://www.dnd5eapi.co) и не са включени в репото.
+- Анимираните фигурки на героите и скелетите са от безплатните пакети **KayKit Adventurers** и **KayKit Skeletons** на Kay Lousberg ([kaylousberg.com](https://kaylousberg.com)), лиценз [CC0](https://creativecommons.org/publicdomain/zero/1.0/). Подготвят се със `scripts/blender/prepare_kaykit.py`.
 - Иконите са от [game-icons.net](https://game-icons.net) (автори Lorc и Delapouite), под [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/).
 - Историите в приключенията са оригинални. Платформата не съдържа текст от официалните платени приключения на D&D.

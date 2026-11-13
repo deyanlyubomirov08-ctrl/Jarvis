@@ -1071,10 +1071,13 @@ export function createTable(container, hooks) {
     if (src.animations.length) {
       mixer = new THREE.AnimationMixer(obj);
       const find = (re) => src.animations.find((a) => re.test(a.name));
-      const idle = find(/idle|stand|breath/i) || src.animations[0];
-      const walk = find(/walk|run|move/i);
+      const idle = find(/^idle$/i) || find(/idle|stand|breath/i) || src.animations[0];
+      const named = { walk: /^walk$|walk|run|move/i, attack: /^attack$/i, hit: /^hit$/i, death: /^death$/i, cast: /^cast$/i };
       clips.idle = mixer.clipAction(idle);
-      if (walk) clips.walk = mixer.clipAction(walk);
+      for (const [key, re] of Object.entries(named)) {
+        const clip = find(re);
+        if (clip && clip !== idle) clips[key] = mixer.clipAction(clip);
+      }
       clips.idle.play();
     }
     return { group, height: src.height + (entry.hover || 0), mixer, clips, imported: true };
@@ -1657,6 +1660,35 @@ export function createTable(container, hooks) {
     return m;
   }
 
+  function baseAction(e) {
+    return (e.walking && e.clips.walk) || e.clips.idle;
+  }
+
+  // Plays a one-shot clip (attack, hit, cast, death) over the idle loop.
+  function playOnce(e, name) {
+    const action = e.clips && e.clips[name];
+    if (!e.mixer || !action) return false;
+    if (e.deadPose && name !== 'death') return false;
+    const base = baseAction(e);
+    action.reset();
+    action.setLoop(THREE.LoopOnce, 1);
+    action.clampWhenFinished = name === 'death';
+    action.play();
+    if (base && base !== action) action.crossFadeFrom(base, 0.12, false);
+    if (!e.onFinished) {
+      e.onFinished = (ev) => {
+        if (ev.action === e.clips.death) return;
+        const back = baseAction(e);
+        if (back && back !== ev.action) {
+          back.reset().play();
+          back.crossFadeFrom(ev.action, 0.2, false);
+        }
+      };
+      e.mixer.addEventListener('finished', e.onFinished);
+    }
+    return true;
+  }
+
   function createEntry(token, char) {
     const root = new THREE.Group();
     root.userData.tokenId = token.id;
@@ -1750,7 +1782,19 @@ export function createTable(container, hooks) {
       entry.token = token;
       entry.char = char;
       const down = char ? char.hp <= 0 : Boolean(token.dead);
-      entry.tiltTarget = down ? 1 : 0;
+      if (entry.clips && entry.clips.death) {
+        if (down && !entry.deadPose) {
+          entry.deadPose = true;
+          playOnce(entry, 'death');
+        } else if (!down && entry.deadPose) {
+          entry.deadPose = false;
+          entry.clips.death.stop();
+          baseAction(entry).reset().play();
+        }
+        entry.tiltTarget = 0;
+      } else {
+        entry.tiltTarget = down ? 1 : 0;
+      }
       entry.opacityTarget = token.hidden ? 0.45 : 1;
       entry.selRing.visible = hooks.selectedId() === token.id;
       entry.turnRing.visible = current === token.id;
@@ -1934,6 +1978,7 @@ export function createTable(container, hooks) {
       const color = ELEMENT_COLORS[e.element] || 0xffffff;
       const impact = () => {
         if (e.hit) {
+          playOnce(to, 'hit');
           flashHit(to, e.crit);
           burst(headOf(to), e.crit ? 0xffd24a : color, e.crit ? 50 : 26, e.crit ? 3.2 : 2.2);
           floatText(to, `${e.crit ? '✦ ' : '−'}${e.damage}`, e.crit ? 'crit' : 'dmg');
@@ -1944,6 +1989,7 @@ export function createTable(container, hooks) {
       if (from) {
         const d = to.root.position.clone().sub(from.root.position);
         from.facing = Math.atan2(d.x, d.z);
+        playOnce(from, e.spell && from.clips.cast ? 'cast' : 'attack');
         if (e.ranged) {
           from.lunge = { t: 0, dir: d.clone().normalize().multiplyScalar(-0.12), dur: 0.3 };
           const arrow = !e.spell && /Piercing/.test(e.element || '');
@@ -1979,6 +2025,7 @@ export function createTable(container, hooks) {
         for (let k = 0; k < 5; k += 1) setTimeout(() => burst(at.clone().add(new THREE.Vector3(0, 0.3 + k * 0.2, 0)), k % 2 ? 0xffe27a : color, 12, 1.0, 0.8), k * 90);
         floatText(to, `+${e.amount}`, 'heal');
       };
+      if (from) playOnce(from, from.clips.cast ? 'cast' : 'attack');
       if (from && from !== to) projectile(headOf(from), headOf(to), color, false, rise);
       else rise();
     }
@@ -2182,7 +2229,7 @@ export function createTable(container, hooks) {
       const diff = ((e.facing - root.rotation.y + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
       root.rotation.y += diff * Math.min(1, dt * 8);
       // breathing / idle
-      const alive = e.tiltTarget === 0;
+      const alive = e.tiltTarget === 0 && !e.deadPose;
       if (!e.mixer) e.model.scale.y = e.model.scale.x * (1 + (alive ? Math.sin(time * 2.2 + e.seed) * 0.02 : 0));
       // down / dead topple
       e.tilt += (e.tiltTarget - e.tilt) * Math.min(1, dt * 5);
