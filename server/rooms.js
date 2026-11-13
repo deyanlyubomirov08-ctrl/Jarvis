@@ -548,7 +548,13 @@ class RoomStore {
       .filter((t) => isDM || !t.hidden)
       .map((t) => {
         if (isDM || t.characterId) return t;
-        const hpPct = t.maxHp ? Math.ceil((Math.max(0, t.hp) / t.maxHp) * 4) * 25 : null;
+        // Approximate health for players: 5% steps, never "full" once hurt.
+        let hpPct = null;
+        if (t.maxHp) {
+          if (t.dead || t.hp <= 0) hpPct = 0;
+          else if (t.hp >= t.maxHp) hpPct = 100;
+          else hpPct = Math.max(5, Math.min(95, Math.round((t.hp / t.maxHp) * 20) * 5));
+        }
         return { ...t, hp: null, maxHp: null, ac: null, hpPct };
       });
     const entries = room.initiative.entries.filter((e) => isDM || !e.hidden);

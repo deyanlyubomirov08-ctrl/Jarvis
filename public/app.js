@@ -257,7 +257,22 @@
 
   socket.on('fx', (e) => {
     if (app.table) app.table.fx(e);
+    reportAttack(e);
   });
+
+  // Tells the attacking player plainly whether their attack landed.
+  function reportAttack(e) {
+    if (!app.view || e.kind !== 'attack' || !e.from) return;
+    const from = app.view.tokens.find((t) => t.id === e.from);
+    const to = app.view.tokens.find((t) => t.id === e.to);
+    if (!from || !from.characterId || !canMoveToken(from)) return;
+    const target = to ? to.label : 'целта';
+    if (!e.hit) {
+      toast(`Пропуск — ${target} избягва удара.`);
+    } else {
+      toast(`${e.crit ? 'КРИТИЧЕН УДАР! ' : 'Попадение! '}${target} поема ${e.damage} щета${e.down ? ' и пада!' : '.'}`);
+    }
+  }
 
   socket.on('message', (msg) => {
     app.log.push(msg);

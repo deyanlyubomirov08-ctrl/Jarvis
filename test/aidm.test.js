@@ -113,3 +113,15 @@ test('players cannot see the encounters ahead or monster HP', () => {
   assert.strictEqual(goblin.hp, null);
   assert.strictEqual(goblin.hpPct, 100);
 });
+
+test('players see that a monster is hurt even after a small hit', () => {
+  const { store, room, player } = aiRoom(1);
+  aidm.loadAdventure(room, adventures.get('goblin-ambush'), 1);
+  aidm.startEncounter(room, mulberry32(1));
+  const t = Object.values(room.tokens).find((x) => x.monsterId);
+  t.maxHp = 40;
+  t.hp = 38;
+  const seen = store.viewFor(room, player.id).tokens.find((x) => x.id === t.id);
+  assert.ok(seen.hpPct < 100, `hpPct ${seen.hpPct}`);
+  assert.strictEqual(seen.hp, null);
+});
