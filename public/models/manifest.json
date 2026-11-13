@@ -1,15 +1,6 @@
 {
   "models": [
     {
-      "id": "goblin",
-      "title": "Goblin raider (TRELLIS.2)",
-      "file": "goblin.glb",
-      "use": [
-        "monster:goblin"
-      ],
-      "height": 1.0
-    },
-    {
       "id": "phantom-fiddler",
       "title": "The Phantom Fiddler",
       "file": "phantom-fiddler.glb",
@@ -109,7 +100,7 @@
       "height": 1.15,
       "use": [
         "class:warlock",
-        "monster:cultist|fanatic"
+        "monster:cultist|fanatic|hag"
       ]
     },
     {
@@ -148,7 +139,7 @@
       "file": "kaykit-skeleton-minion.glb",
       "height": 1.05,
       "use": [
-        "monster:zombie|ghoul|ghast|minion"
+        "monster:minion"
       ]
     },
     {
@@ -168,6 +159,285 @@
       "use": [
         "monster:specter|ghost|wraith|shadow|banshee"
       ]
+    },
+    {
+      "id": "q-rat",
+      "title": "Rat — Quaternius (CC0)",
+      "file": "q-rat.glb",
+      "use": [
+        "monster:rat"
+      ],
+      "height": 0.4
+    },
+    {
+      "id": "q-bat",
+      "title": "Bat — Quaternius (CC0)",
+      "file": "q-bat.glb",
+      "use": [
+        "monster:bat|stirge"
+      ],
+      "height": 0.5,
+      "hover": 0.6
+    },
+    {
+      "id": "q-snake",
+      "title": "Snake — Quaternius (CC0)",
+      "file": "q-snake.glb",
+      "use": [
+        "monster:snake|serpent|naga"
+      ],
+      "height": 0.45
+    },
+    {
+      "id": "q-spider",
+      "title": "Spider — Quaternius (CC0)",
+      "file": "q-spider.glb",
+      "use": [
+        "monster:spider|ettercap|phase"
+      ],
+      "height": 0.6
+    },
+    {
+      "id": "q-worg",
+      "title": "Husky as worg — Quaternius (CC0)",
+      "file": "q-husky.glb",
+      "use": [
+        "monster:worg|dire-wolf|winter-wolf|hell-hound"
+      ],
+      "height": 0.85
+    },
+    {
+      "id": "q-wolf",
+      "title": "Wolf — Quaternius (CC0)",
+      "file": "q-wolf.glb",
+      "use": [
+        "monster:wolf|jackal|hyena|mastiff"
+      ],
+      "height": 0.7
+    },
+    {
+      "id": "q-fox",
+      "title": "Fox — Quaternius (CC0)",
+      "file": "q-fox.glb",
+      "use": [
+        "monster:fox|weasel|badger"
+      ],
+      "height": 0.5
+    },
+    {
+      "id": "q-frog",
+      "title": "Frog — Quaternius (CC0)",
+      "file": "q-frog.glb",
+      "use": [
+        "monster:frog|toad"
+      ],
+      "height": 0.5
+    },
+    {
+      "id": "q-goblin",
+      "title": "Orc as goblin — Quaternius (CC0)",
+      "file": "q-orc.glb",
+      "use": [
+        "monster:goblin|kobold"
+      ],
+      "height": 0.8
+    },
+    {
+      "id": "q-hobgoblin",
+      "title": "Orc as hobgoblin — Quaternius (CC0)",
+      "file": "q-orc.glb",
+      "use": [
+        "monster:hobgoblin|gnoll"
+      ],
+      "height": 1.1
+    },
+    {
+      "id": "q-orc",
+      "title": "Orc — Quaternius (CC0)",
+      "file": "q-orc.glb",
+      "use": [
+        "monster:orc"
+      ],
+      "height": 1.15
+    },
+    {
+      "id": "q-bugbear",
+      "title": "Orc as bugbear — Quaternius (CC0)",
+      "file": "q-orc.glb",
+      "use": [
+        "monster:bugbear|ogre|troll|ettin|hill-giant|stone-giant|frost-giant|fire-giant|cloud-giant|storm-giant"
+      ],
+      "height": 1.45
+    },
+    {
+      "id": "q-imp",
+      "title": "Blue demon as imp — Quaternius (CC0)",
+      "file": "q-imp.glb",
+      "use": [
+        "monster:imp|quasit|mephit|homunculus"
+      ],
+      "height": 0.75
+    },
+    {
+      "id": "q-demon",
+      "title": "Demon — Quaternius (CC0)",
+      "file": "q-demon.glb",
+      "use": [
+        "monster:demon|devil|fiend|balor|barbed|bone-devil|horned|erinyes|vrock|hezrou|glabrezu|nalfeshnee|marilith",
+        "type:fiend"
+      ],
+      "height": 1.3
+    },
+    {
+      "id": "q-creep",
+      "title": "Creep creature — Quaternius (CC0)",
+      "file": "q-creep.glb",
+      "use": [
+        "monster:ankheg|grick|hook|carrion|otyugh|gibbering|owlbear|chuul|umber",
+        "type:aberration"
+      ],
+      "height": 1.0
+    },
+    {
+      "id": "q-dragon",
+      "title": "Dragon — Quaternius (CC0)",
+      "file": "q-dragon.glb",
+      "use": [
+        "monster:dragon|wyrmling|drake|wyvern",
+        "type:dragon"
+      ],
+      "height": 1.0,
+      "hover": 0.25
+    },
+    {
+      "id": "q-slime",
+      "title": "Slime — Quaternius (CC0)",
+      "file": "q-slime.glb",
+      "use": [
+        "monster:cube|ooze|jelly|pudding|slime",
+        "type:ooze"
+      ],
+      "height": 0.7
+    },
+    {
+      "id": "q-wasp",
+      "title": "Wasp — Quaternius (CC0)",
+      "file": "q-wasp.glb",
+      "use": [
+        "monster:wasp|insect|giant-bee|scorpion|centipede"
+      ],
+      "height": 0.5,
+      "hover": 0.5
+    },
+    {
+      "id": "q-zombie",
+      "title": "Zombie — Quaternius (CC0)",
+      "file": "q-zombie.glb",
+      "use": [
+        "monster:zombie|ghoul|ghast"
+      ],
+      "height": 1.05
+    },
+    {
+      "id": "q-stag",
+      "title": "Stag — Quaternius (CC0)",
+      "file": "q-stag.glb",
+      "use": [
+        "monster:deer|elk|stag"
+      ],
+      "height": 0.95
+    },
+    {
+      "id": "q-horse",
+      "title": "Horse — Quaternius (CC0)",
+      "file": "q-horse.glb",
+      "use": [
+        "monster:horse|pony|mule|warhorse|donkey|camel"
+      ],
+      "height": 1.0
+    },
+    {
+      "id": "q-bull",
+      "title": "Bull — Quaternius (CC0)",
+      "file": "q-bull.glb",
+      "use": [
+        "monster:bull|boar|aurochs|bison|cow"
+      ],
+      "height": 0.85
+    },
+    {
+      "id": "q-raptor",
+      "title": "Velociraptor — Quaternius (CC0)",
+      "file": "q-raptor.glb",
+      "use": [
+        "monster:crocodile|lizard|raptor|lizardfolk|kobold-"
+      ],
+      "height": 0.7
+    },
+    {
+      "id": "q-trex",
+      "title": "Tyrannosaurus — Quaternius (CC0)",
+      "file": "q-trex.glb",
+      "use": [
+        "monster:tyrannosaurus|allosaurus"
+      ],
+      "height": 1.6
+    },
+    {
+      "id": "q-triceratops",
+      "title": "Triceratops — Quaternius (CC0)",
+      "file": "q-triceratops.glb",
+      "use": [
+        "monster:triceratops"
+      ],
+      "height": 1.2
+    },
+    {
+      "id": "q-stegosaurus",
+      "title": "Stegosaurus — Quaternius (CC0)",
+      "file": "q-stegosaurus.glb",
+      "use": [
+        "monster:ankylosaurus|stegosaurus"
+      ],
+      "height": 1.1
+    },
+    {
+      "id": "fallback-humanoid",
+      "title": "Any other humanoid — KayKit (CC0)",
+      "file": "kaykit-rogue.glb",
+      "use": [
+        "type:humanoid"
+      ],
+      "height": 1.1
+    },
+    {
+      "id": "fallback-undead",
+      "title": "Any other undead — KayKit (CC0)",
+      "file": "kaykit-skeleton-warrior.glb",
+      "use": [
+        "type:undead",
+        "type:ghost"
+      ],
+      "height": 1.1
+    },
+    {
+      "id": "fallback-swarm",
+      "title": "Any other swarm — Quaternius (CC0)",
+      "file": "q-wasp.glb",
+      "use": [
+        "type:swarm"
+      ],
+      "height": 0.5,
+      "hover": 0.5
+    },
+    {
+      "id": "fallback-giant",
+      "title": "Any other giant — Quaternius (CC0)",
+      "file": "q-orc.glb",
+      "use": [
+        "type:giant"
+      ],
+      "height": 1.6
     }
   ]
 }

@@ -27,3 +27,10 @@
 (https://kaylousberg.com), лиценз CC0 — свободни за всякаква употреба. Всеки има анимации
 `idle`, `walk`, `attack`, `hit`, `death` (и `cast` за магьосниците), които играта пуска в битка.
 Пресъздават се със `scripts/blender/prepare_kaykit.py`.
+
+## Готови безплатни модели (Quaternius, CC0)
+
+Файловете `q-*.glb` (чудовища и зверове с анимации) и повечето файлове в `env/` (дървета, скали,
+бъчви, сандъци, кости, колони, кристали) са от пакетите на Quaternius (https://quaternius.com),
+лиценз CC0. Пресъздават се със `scripts/blender/prepare_quaternius.py` и `scripts/blender/convert_env.py`.
+Стените, вратата, надгробната плоча и гъбите в `env/` са от `scripts/blender/build_props.py`.

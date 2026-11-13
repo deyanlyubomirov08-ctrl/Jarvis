@@ -1372,7 +1372,7 @@ export function createTable(container, hooks) {
       const groups = new Map(names.map((n) => [n, []]));
       trees.forEach((t) => {
         const p = toWorld(t.x, t.y);
-        const sc = 0.95 + rnd() * 0.45;
+        const sc = 0.85 + rnd() * 0.3;
         groups.get(names[Math.floor(rnd() * names.length)]).push({
           x: p.x + (rnd() - 0.5) * 0.3, z: p.z + (rnd() - 0.5) * 0.3, rot: rnd() * 6.28, scale: [sc, sc * (0.9 + rnd() * 0.3), sc], tint: 0.85 + rnd() * 0.3,
         });
